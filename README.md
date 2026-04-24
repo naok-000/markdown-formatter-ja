@@ -1,1 +1,1 @@
-# mdformat-ja
+# markdown-formatter-ja
