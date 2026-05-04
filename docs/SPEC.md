@@ -40,4 +40,9 @@ Markdown formatterを作成する．
 - [0002. Markdownの行頭マーカーと英単語を折り返し単位として扱う](./adr/0002-wrap-markdown-prefixes-and-english-words.md)についても参照する
 - インターフェース
   - CLIで使用できること
+    - 標準入力からMarkdownを読み，整形結果を標準出力へ書けること
+    - ファイルパスを指定した場合，通常時は整形前後の差分を表示すること
+    - オプション指定により，指定したMarkdownファイルを直接書き換えられること
+    - `--help` で使い方とオプション説明を表示できること
+    - コマンドライン引数解析には `clap` などのcrateを使うこと
   - optional: comform.nvim から使用できること
