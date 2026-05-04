@@ -79,45 +79,50 @@ fn heading_parts(line: &str) -> Option<(&str, &str)> {
     }
 }
 
-fn bullet_list_parts(line: &str) -> Option<(&str, &str)> {
-    if line.starts_with("- ") {
-        Some(line.split_at(2))
-    } else {
-        None
-    }
-}
-
-fn ordered_list_parts(line: &str) -> Option<(&str, &str)> {
-    let period_index = line.find('.')?;
-
-    if period_index > 0
-        && line[..period_index]
-            .chars()
-            .all(|character| character.is_ascii_digit())
-        && line.as_bytes().get(period_index + 1) == Some(&b' ')
-    {
-        Some(line.split_at(period_index + 2))
-    } else {
-        None
-    }
-}
-
 fn wrap_markdown_line(line: &str, width: usize) -> String {
     if let Some((marker, text)) = heading_parts(line) {
         format!("{marker}{}", wrap_markdown_text(text, width))
-    } else if let Some((marker, text)) = bullet_list_parts(line) {
-        wrap_with_marker(marker, "  ", text, width)
-    } else if let Some((marker, text)) = ordered_list_parts(line) {
-        wrap_with_marker(marker, &" ".repeat(marker.len()), text, width)
+    } else if let Some((prefix, text)) = list_item_parts(line) {
+        wrap_with_prefix(prefix, text, width)
     } else {
         wrap_markdown_text(line, width)
     }
 }
 
-fn wrap_with_marker(marker: &str, continuation: &str, text: &str, width: usize) -> String {
+fn list_item_parts(line: &str) -> Option<(&str, &str)> {
+    let indent_len = line
+        .chars()
+        .take_while(|character| *character == ' ')
+        .map(char::len_utf8)
+        .sum();
+    let marker_start = &line[indent_len..];
+
+    if marker_start.starts_with("- ") {
+        return Some(line.split_at(indent_len + 2));
+    }
+
+    let period_index = marker_start.find('.')?;
+
+    if period_index > 0
+        && marker_start[..period_index]
+            .chars()
+            .all(|character| character.is_ascii_digit())
+        && marker_start.as_bytes().get(period_index + 1) == Some(&b' ')
+    {
+        Some(line.split_at(indent_len + period_index + 2))
+    } else {
+        None
+    }
+}
+
+fn wrap_with_prefix(prefix: &str, text: &str, width: usize) -> String {
+    let prefix_width = text_width(prefix);
+    let text_width = width.saturating_sub(prefix_width).max(1);
+    let continuation = " ".repeat(prefix_width);
+
     format!(
-        "{marker}{}",
-        wrap_markdown_text(text, width).replace('\n', &format!("\n{continuation}"))
+        "{prefix}{}",
+        wrap_markdown_text(text, text_width).replace('\n', &format!("\n{continuation}"))
     )
 }
 
@@ -143,6 +148,13 @@ fn wrap_markdown_text(text: &str, width: usize) -> String {
             let character = rest.chars().next().unwrap();
             let character_width = display_width(character);
 
+            if character == ' ' && line_width + character_width > width {
+                output.push('\n');
+                line_width = 0;
+                rest = &rest[character.len_utf8()..];
+                continue;
+            }
+
             if line_width > 0
                 && line_width + character_width > width
                 && !is_prohibited_line_start(character)
@@ -161,7 +173,9 @@ fn wrap_markdown_text(text: &str, width: usize) -> String {
 }
 
 fn atomic_markdown_token_end(text: &str) -> Option<usize> {
-    inline_code_end(text).or_else(|| link_end(text))
+    inline_code_end(text)
+        .or_else(|| link_end(text))
+        .or_else(|| ascii_word_end(text))
 }
 
 fn inline_code_end(text: &str) -> Option<usize> {
@@ -183,6 +197,31 @@ fn link_end(text: &str) -> Option<usize> {
     text[destination_start..]
         .find(')')
         .map(|index| destination_start + index)
+}
+
+fn ascii_word_end(text: &str) -> Option<usize> {
+    let mut characters = text.char_indices();
+    let (_, first) = characters.next()?;
+
+    if !first.is_ascii_alphanumeric() {
+        return None;
+    }
+
+    let mut end = first.len_utf8() - 1;
+
+    for (index, character) in characters {
+        if is_ascii_word_character(character) {
+            end = index + character.len_utf8() - 1;
+        } else {
+            break;
+        }
+    }
+
+    Some(end)
+}
+
+fn is_ascii_word_character(character: char) -> bool {
+    character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.' | '/')
 }
 
 fn text_width(text: &str) -> usize {
@@ -259,7 +298,7 @@ mod tests {
     fn preserves_bullet_list_marker_and_wraps_item_text() {
         assert_eq!(
             wrap_markdown("- これは日本語の項目です", 10),
-            "- これは日本\n  語の項目で\n  す"
+            "- これは日\n  本語の項\n  目です"
         );
     }
 
@@ -267,7 +306,47 @@ mod tests {
     fn preserves_ordered_list_marker_and_wraps_item_text() {
         assert_eq!(
             wrap_markdown("1. これは日本語の項目です", 10),
-            "1. これは日本\n   語の項目で\n   す"
+            "1. これは\n   日本語\n   の項目\n   です"
+        );
+    }
+
+    #[test]
+    fn keeps_ascii_words_intact() {
+        assert_eq!(
+            wrap_markdown("これはmarkdownの文章です", 10),
+            "これは\nmarkdownの\n文章です"
+        );
+    }
+
+    #[test]
+    fn keeps_ascii_word_like_tokens_intact() {
+        assert_eq!(
+            wrap_markdown("foo_bar foo-bar example.com path/to/file", 8),
+            "foo_bar \nfoo-bar \nexample.com\npath/to/file"
+        );
+    }
+
+    #[test]
+    fn allows_ascii_words_to_exceed_width() {
+        assert_eq!(
+            wrap_markdown("short superlongword", 8),
+            "short \nsuperlongword"
+        );
+    }
+
+    #[test]
+    fn counts_multi_digit_ordered_list_marker_in_width() {
+        assert_eq!(
+            wrap_markdown("10. これは日本語の項目です", 10),
+            "10. これは\n    日本語\n    の項目\n    です"
+        );
+    }
+
+    #[test]
+    fn counts_nested_list_indent_and_marker_in_width() {
+        assert_eq!(
+            wrap_markdown("  - これは日本語の項目です", 10),
+            "  - これは\n    日本語\n    の項目\n    です"
         );
     }
 

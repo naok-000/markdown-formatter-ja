@@ -68,7 +68,7 @@ fn uses_default_width_when_width_is_omitted() {
         .stdin
         .as_mut()
         .unwrap()
-        .write_all("a".repeat(81).as_bytes())
+        .write_all("あ".repeat(41).as_bytes())
         .unwrap();
 
     let output = child.wait_with_output().unwrap();
@@ -76,7 +76,7 @@ fn uses_default_width_when_width_is_omitted() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        format!("{}\na", "a".repeat(80))
+        format!("{}\nあ", "あ".repeat(40))
     );
 }
 
