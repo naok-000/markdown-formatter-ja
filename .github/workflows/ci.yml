@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  ci:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux amd64
+            runner: ubuntu-latest
+          - name: Darwin aarch64
+            runner: macos-14
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: DeterminateSystems/nix-installer-action@v21
+
+      - run: nix flake check
+      - run: nix build
+      - run: nix develop -c cargo fmt --check
+      - run: nix develop -c cargo clippy -- -D warnings
+      - run: nix develop -c cargo test
+      - run: nix develop -c cargo build --release
+      - run: nix develop -c cargo install --path . --locked

@@ -32,11 +32,11 @@ fn run() -> Result<(), String> {
     let input = read_input(config.path.as_deref())?;
     let output = wrap_markdown(&input, config.width);
 
-    if let Some(path) = &config.path {
-        if config.write {
-            fs::write(path, output).map_err(|error| error.to_string())?;
-            return Ok(());
-        }
+    if let Some(path) = &config.path
+        && config.write
+    {
+        fs::write(path, output).map_err(|error| error.to_string())?;
+        return Ok(());
     }
 
     io::stdout()

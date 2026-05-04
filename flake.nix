@@ -22,11 +22,16 @@
 
         naersk' = pkgs.callPackage naersk {};
       in rec {
-        defaultPackage = naersk'.buildPackage {
+        packages.default = naersk'.buildPackage {
           src = ./.;
         };
 
-        devShell = pkgs.mkShell {
+        apps.default = flake-utils.lib.mkApp {
+          drv = packages.default;
+          exePath = "/bin/markdown-formatter-ja";
+        };
+
+        devShells.default = pkgs.mkShell {
           nativeBuildInputs = with pkgs; [
             alejandra
             rust-analyzer
