@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [0004. CLIのファイル指定時も整形結果を標準出力する](./0004-print-formatted-output-for-file-input.md)
 
 ## Context
 
