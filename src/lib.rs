@@ -125,6 +125,20 @@ pub fn wrap_text(text: &str, width: usize) -> String {
     output
 }
 
+pub fn wrap_paragraphs(markdown: &str, width: usize) -> String {
+    markdown
+        .split("\n\n")
+        .map(|paragraph| {
+            if paragraph.is_empty() {
+                String::new()
+            } else {
+                wrap_text(paragraph, width)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
 fn collect_inlines<'a>(node: &'a MarkdownNode<'a>, inlines: &mut Vec<Inline>) {
     if let Some(inline) = inline_from_node(node) {
         inlines.push(inline);
@@ -197,7 +211,7 @@ fn is_prohibited_line_start(character: char) -> bool {
 mod tests {
     use super::{
         BlockKind, BlockRole, Inline, InlineKind, format_markdown, parse_blocks, parse_inlines,
-        wrap_text,
+        wrap_paragraphs, wrap_text,
     };
 
     #[test]
@@ -371,6 +385,26 @@ mod tests {
         assert_eq!(
             wrap_text("これは日本）文章です", 10),
             "これは日本）\n文章です"
+        );
+    }
+
+    #[test]
+    fn wraps_multiple_paragraphs_independently() {
+        let markdown = "abcdef\n\nこれは日本語の文章です";
+
+        assert_eq!(
+            wrap_paragraphs(markdown, 10),
+            "abcdef\n\nこれは日本\n語の文章で\nす"
+        );
+    }
+
+    #[test]
+    fn preserves_blank_lines_between_paragraphs() {
+        let markdown = "abcdef\n\n\n\nこれは日本語";
+
+        assert_eq!(
+            wrap_paragraphs(markdown, 10),
+            "abcdef\n\n\n\nこれは日本\n語"
         );
     }
 }
