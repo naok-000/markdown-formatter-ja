@@ -139,6 +139,27 @@ pub fn wrap_paragraphs(markdown: &str, width: usize) -> String {
         .join("\n\n")
 }
 
+pub fn wrap_markdown(markdown: &str, width: usize) -> String {
+    let mut in_code_fence = false;
+
+    markdown
+        .lines()
+        .map(|line| {
+            if line.starts_with("```") {
+                in_code_fence = !in_code_fence;
+                return line.to_string();
+            }
+
+            if in_code_fence {
+                return line.to_string();
+            }
+
+            wrap_markdown_line(line, width)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn collect_inlines<'a>(node: &'a MarkdownNode<'a>, inlines: &mut Vec<Inline>) {
     if let Some(inline) = inline_from_node(node) {
         inlines.push(inline);
@@ -207,11 +228,134 @@ fn is_prohibited_line_start(character: char) -> bool {
     )
 }
 
+fn heading_parts(line: &str) -> Option<(&str, &str)> {
+    let marker_len = line
+        .chars()
+        .take_while(|character| *character == '#')
+        .count();
+
+    if (1..=6).contains(&marker_len) && line.as_bytes().get(marker_len) == Some(&b' ') {
+        Some(line.split_at(marker_len + 1))
+    } else {
+        None
+    }
+}
+
+fn bullet_list_parts(line: &str) -> Option<(&str, &str)> {
+    if line.starts_with("- ") {
+        Some(line.split_at(2))
+    } else {
+        None
+    }
+}
+
+fn ordered_list_parts(line: &str) -> Option<(&str, &str)> {
+    let period_index = line.find('.')?;
+
+    if period_index > 0
+        && line[..period_index]
+            .chars()
+            .all(|character| character.is_ascii_digit())
+        && line.as_bytes().get(period_index + 1) == Some(&b' ')
+    {
+        Some(line.split_at(period_index + 2))
+    } else {
+        None
+    }
+}
+
+fn wrap_markdown_line(line: &str, width: usize) -> String {
+    if let Some((marker, text)) = heading_parts(line) {
+        format!("{marker}{}", wrap_markdown_text(text, width))
+    } else if let Some((marker, text)) = bullet_list_parts(line) {
+        wrap_with_marker(marker, "  ", text, width)
+    } else if let Some((marker, text)) = ordered_list_parts(line) {
+        wrap_with_marker(marker, &" ".repeat(marker.len()), text, width)
+    } else {
+        wrap_markdown_text(line, width)
+    }
+}
+
+fn wrap_with_marker(marker: &str, continuation: &str, text: &str, width: usize) -> String {
+    format!(
+        "{marker}{}",
+        wrap_markdown_text(text, width).replace('\n', &format!("\n{continuation}"))
+    )
+}
+
+fn wrap_markdown_text(text: &str, width: usize) -> String {
+    let mut output = String::new();
+    let mut line_width = 0;
+    let mut rest = text;
+
+    while !rest.is_empty() {
+        if let Some(token_end) = atomic_markdown_token_end(rest) {
+            let token = &rest[..=token_end];
+            let token_width = text_width(token);
+
+            if line_width > 0 && line_width + token_width > width {
+                output.push('\n');
+                line_width = 0;
+            }
+
+            output.push_str(token);
+            line_width += token_width;
+            rest = &rest[token_end + 1..];
+        } else {
+            let character = rest.chars().next().unwrap();
+            let character_width = display_width(character);
+
+            if line_width > 0
+                && line_width + character_width > width
+                && !is_prohibited_line_start(character)
+            {
+                output.push('\n');
+                line_width = 0;
+            }
+
+            output.push(character);
+            line_width += character_width;
+            rest = &rest[character.len_utf8()..];
+        }
+    }
+
+    output
+}
+
+fn atomic_markdown_token_end(text: &str) -> Option<usize> {
+    inline_code_end(text).or_else(|| link_end(text))
+}
+
+fn inline_code_end(text: &str) -> Option<usize> {
+    if !text.starts_with('`') {
+        return None;
+    }
+
+    text[1..].find('`').map(|index| index + 1)
+}
+
+fn link_end(text: &str) -> Option<usize> {
+    if !text.starts_with('[') {
+        return None;
+    }
+
+    let label_end = text.find("](")?;
+    let destination_start = label_end + 2;
+
+    text[destination_start..]
+        .find(')')
+        .map(|index| destination_start + index)
+}
+
+fn text_width(text: &str) -> usize {
+    text.chars().map(display_width).sum()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         BlockKind, BlockRole, Inline, InlineKind, format_markdown, parse_blocks, parse_inlines,
-        wrap_paragraphs, wrap_text,
+        wrap_markdown, wrap_paragraphs, wrap_text,
     };
 
     #[test]
@@ -405,6 +549,56 @@ mod tests {
         assert_eq!(
             wrap_paragraphs(markdown, 10),
             "abcdef\n\n\n\nこれは日本\n語"
+        );
+    }
+
+    #[test]
+    fn preserves_heading_marker_and_wraps_heading_text() {
+        assert_eq!(
+            wrap_markdown("# これは日本語の見出しです", 10),
+            "# これは日本\n語の見出し\nです"
+        );
+    }
+
+    #[test]
+    fn preserves_bullet_list_marker_and_wraps_item_text() {
+        assert_eq!(
+            wrap_markdown("- これは日本語の項目です", 10),
+            "- これは日本\n  語の項目で\n  す"
+        );
+    }
+
+    #[test]
+    fn preserves_ordered_list_marker_and_wraps_item_text() {
+        assert_eq!(
+            wrap_markdown("1. これは日本語の項目です", 10),
+            "1. これは日本\n   語の項目で\n   す"
+        );
+    }
+
+    #[test]
+    fn preserves_text_inside_code_fences() {
+        let markdown = "```text\nこれは日本語の長いコードです\n```\n";
+
+        assert_eq!(
+            wrap_markdown(markdown, 10),
+            "```text\nこれは日本語の長いコードです\n```"
+        );
+    }
+
+    #[test]
+    fn does_not_wrap_inside_inline_code() {
+        assert_eq!(
+            wrap_markdown("これは`日本語のコード`です", 10),
+            "これは\n`日本語のコード`\nです"
+        );
+    }
+
+    #[test]
+    fn does_not_wrap_inside_links() {
+        assert_eq!(
+            wrap_markdown("これは[日本語のリンク](https://example.com/)です", 10),
+            "これは\n[日本語のリンク](https://example.com/)\nです"
         );
     }
 }
