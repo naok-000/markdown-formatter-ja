@@ -1,16 +1,20 @@
-use std::env;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::process::ExitCode;
 
+use clap::Parser;
 use markdown_formatter_ja::wrap_markdown;
 
 const DEFAULT_WIDTH: usize = 80;
 
+#[derive(Parser)]
+#[command(about = "Format Markdown text for Japanese documents")]
 struct Config {
+    #[arg(long, default_value_t = DEFAULT_WIDTH)]
     width: usize,
-    path: Option<String>,
+    #[arg(long, requires = "path")]
     write: bool,
+    path: Option<String>,
 }
 
 fn main() -> ExitCode {
@@ -24,7 +28,7 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<(), String> {
-    let config = parse_args(env::args().skip(1))?;
+    let config = Config::parse();
     let input = read_input(config.path.as_deref())?;
     let output = wrap_markdown(&input, config.width);
 
@@ -38,38 +42,6 @@ fn run() -> Result<(), String> {
     io::stdout()
         .write_all(output.as_bytes())
         .map_err(|error| error.to_string())
-}
-
-fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Config, String> {
-    let mut width = DEFAULT_WIDTH;
-    let mut path = None;
-    let mut write = false;
-    let mut args = args.into_iter();
-
-    while let Some(arg) = args.next() {
-        if arg == "--width" {
-            let value = args
-                .next()
-                .ok_or_else(|| "missing value for --width".to_string())?;
-            width = value
-                .parse()
-                .map_err(|_| format!("invalid width: {value}"))?;
-        } else if arg == "--write" {
-            write = true;
-        } else if arg.starts_with('-') {
-            return Err(format!("unknown argument: {arg}"));
-        } else if path.is_some() {
-            return Err(format!("unexpected argument: {arg}"));
-        } else {
-            path = Some(arg);
-        }
-    }
-
-    if write && path.is_none() {
-        return Err("--write requires a file path".to_string());
-    }
-
-    Ok(Config { width, path, write })
 }
 
 fn read_input(path: Option<&str>) -> Result<String, String> {

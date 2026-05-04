@@ -124,13 +124,39 @@ fn writes_formatted_output_with_write_option() {
 }
 
 #[test]
+fn rejects_write_without_file_path() {
+    let output = binary().arg("--write").output().unwrap();
+
+    assert!(!output.status.success());
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "");
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("--write")
+    );
+}
+
+#[test]
 fn rejects_invalid_cli_arguments() {
     let output = binary().arg("--unknown").output().unwrap();
 
     assert!(!output.status.success());
     assert_eq!(String::from_utf8(output.stdout).unwrap(), "");
-    assert_eq!(
-        String::from_utf8(output.stderr).unwrap(),
-        "error: unknown argument: --unknown\n"
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("--unknown")
     );
+}
+
+#[test]
+fn prints_help() {
+    let output = binary().arg("--help").output().unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("Usage:"));
+    assert!(stdout.contains("--width"));
+    assert!(stdout.contains("--write"));
+    assert_eq!(String::from_utf8(output.stderr).unwrap(), "");
 }
