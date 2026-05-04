@@ -47,3 +47,13 @@ Markdown formatterを作成する．
     - コマンドライン引数解析には `clap` などのcrateを使うこと
     - [0004. CLIのファイル指定時も整形結果を標準出力する](./adr/0004-print-formatted-output-for-file-input.md)についても参照する
   - optional: comform.nvim から使用できること
+
+### 配布・CI/CD要件
+
+- GitHub Actionsでbuildとtestを実行すること
+- Nix flakeを使い，`nix run github:naok-000/markdown-formatter-ja` で実行できること
+- Cargo経由では，`cargo install --git https://github.com/naok-000/markdown-formatter-ja` でinstallできること
+- ReleaseはGitHub Release機能を使うこと
+- Releaseは `v*` tag pushを起点に自動作成すること
+- 初期CI対象platformは Darwin aarch64 と Linux amd64 とすること
+- [0005. CI/CDと配布方法をNixとCargo install --gitに絞る](./adr/0005-ci-release-and-distribution.md)についても参照する
