@@ -41,7 +41,8 @@ impl BlockKind {
 
 pub fn parse_blocks(markdown: &str) -> Vec<Block> {
     let arena = Arena::new();
-    let root = parse_document(&arena, markdown, &Options::default());
+    let options = markdown_options();
+    let root = parse_document(&arena, markdown, &options);
 
     root.children()
         .filter_map(|node| {
@@ -66,12 +67,19 @@ pub fn parse_blocks(markdown: &str) -> Vec<Block> {
 
 pub fn format_markdown(markdown: &str) -> String {
     let arena = Arena::new();
-    let root = parse_document(&arena, markdown, &Options::default());
+    let options = markdown_options();
+    let root = parse_document(&arena, markdown, &options);
     let mut output = String::new();
 
-    format_commonmark(root, &Options::default(), &mut output).unwrap();
+    format_commonmark(root, &options, &mut output).unwrap();
 
     output
+}
+
+fn markdown_options() -> Options<'static> {
+    let mut options = Options::default();
+    options.extension.table = true;
+    options
 }
 
 #[cfg(test)]
@@ -108,6 +116,45 @@ mod tests {
             .collect();
 
         assert_eq!(kinds, vec![BlockKind::BulletList, BlockKind::OrderedList]);
+    }
+
+    #[test]
+    fn detects_tables_as_preserved_blocks() {
+        let markdown = "| key | value |\n| --- | --- |\n| a | b |\n";
+
+        let blocks = parse_blocks(markdown);
+
+        assert_eq!(
+            blocks,
+            vec![super::Block {
+                kind: BlockKind::Table
+            }]
+        );
+        assert_eq!(blocks[0].kind.role(), BlockRole::Preserve);
+    }
+
+    #[test]
+    fn detects_preserved_block_kinds() {
+        let markdown = "> quote\n\n---\n";
+
+        let kinds: Vec<_> = parse_blocks(markdown)
+            .into_iter()
+            .map(|block| block.kind)
+            .collect();
+
+        assert_eq!(kinds, vec![BlockKind::BlockQuote, BlockKind::ThematicBreak]);
+    }
+
+    #[test]
+    fn ignores_markdown_syntax_inside_code_fences() {
+        let markdown = "```markdown\n# not a heading\n- not a list\n```\n";
+
+        let kinds: Vec<_> = parse_blocks(markdown)
+            .into_iter()
+            .map(|block| block.kind)
+            .collect();
+
+        assert_eq!(kinds, vec![BlockKind::CodeBlock]);
     }
 
     #[test]
