@@ -10,6 +10,7 @@ const DEFAULT_WIDTH: usize = 80;
 struct Config {
     width: usize,
     path: Option<String>,
+    write: bool,
 }
 
 fn main() -> ExitCode {
@@ -27,6 +28,13 @@ fn run() -> Result<(), String> {
     let input = read_input(config.path.as_deref())?;
     let output = wrap_markdown(&input, config.width);
 
+    if let Some(path) = &config.path {
+        if config.write {
+            fs::write(path, output).map_err(|error| error.to_string())?;
+            return Ok(());
+        }
+    }
+
     io::stdout()
         .write_all(output.as_bytes())
         .map_err(|error| error.to_string())
@@ -35,6 +43,7 @@ fn run() -> Result<(), String> {
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Config, String> {
     let mut width = DEFAULT_WIDTH;
     let mut path = None;
+    let mut write = false;
     let mut args = args.into_iter();
 
     while let Some(arg) = args.next() {
@@ -45,6 +54,8 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Config, String> 
             width = value
                 .parse()
                 .map_err(|_| format!("invalid width: {value}"))?;
+        } else if arg == "--write" {
+            write = true;
         } else if arg.starts_with('-') {
             return Err(format!("unknown argument: {arg}"));
         } else if path.is_some() {
@@ -54,7 +65,11 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Config, String> 
         }
     }
 
-    Ok(Config { width, path })
+    if write && path.is_none() {
+        return Err("--write requires a file path".to_string());
+    }
+
+    Ok(Config { width, path, write })
 }
 
 fn read_input(path: Option<&str>) -> Result<String, String> {

@@ -103,6 +103,27 @@ fn formats_markdown_from_file_path_to_stdout() {
 }
 
 #[test]
+fn writes_formatted_output_with_write_option() {
+    let path = std::env::temp_dir().join(format!(
+        "markdown-formatter-ja-cli-write-{}.md",
+        std::process::id()
+    ));
+    fs::write(&path, "これは日本語の文章です").unwrap();
+
+    let output = binary()
+        .args(["--width", "10", "--write", path.to_str().unwrap()])
+        .output()
+        .unwrap();
+
+    let file_content = fs::read_to_string(&path).unwrap();
+    fs::remove_file(path).unwrap();
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "");
+    assert_eq!(file_content, "これは日本\n語の文章で\nす");
+}
+
+#[test]
 fn rejects_invalid_cli_arguments() {
     let output = binary().arg("--unknown").output().unwrap();
 
