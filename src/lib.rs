@@ -1,6 +1,8 @@
 use comrak::nodes::{ListType, NodeValue};
 use comrak::{Arena, Options, format_commonmark, parse_document};
 
+type MarkdownNode<'a> = comrak::nodes::AstNode<'a>;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockKind {
     Paragraph,
@@ -16,6 +18,20 @@ pub enum BlockKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Block {
     pub kind: BlockKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InlineKind {
+    Code,
+    Link,
+    Image,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Inline {
+    pub kind: InlineKind,
+    pub literal: String,
+    pub destination: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,6 +92,17 @@ pub fn format_markdown(markdown: &str) -> String {
     output
 }
 
+pub fn parse_inlines(markdown: &str) -> Vec<Inline> {
+    let arena = Arena::new();
+    let options = markdown_options();
+    let root = parse_document(&arena, markdown, &options);
+    let mut inlines = Vec::new();
+
+    collect_inlines(root, &mut inlines);
+
+    inlines
+}
+
 pub fn wrap_text(text: &str, width: usize) -> String {
     let mut output = String::new();
     let mut line_width = 0;
@@ -98,6 +125,57 @@ pub fn wrap_text(text: &str, width: usize) -> String {
     output
 }
 
+fn collect_inlines<'a>(node: &'a MarkdownNode<'a>, inlines: &mut Vec<Inline>) {
+    if let Some(inline) = inline_from_node(node) {
+        inlines.push(inline);
+    }
+
+    for child in node.children() {
+        collect_inlines(child, inlines);
+    }
+}
+
+fn inline_from_node<'a>(node: &'a MarkdownNode<'a>) -> Option<Inline> {
+    match &node.data.borrow().value {
+        NodeValue::Code(code) => Some(Inline {
+            kind: InlineKind::Code,
+            literal: code.literal.clone(),
+            destination: None,
+        }),
+        NodeValue::Link(link) => Some(Inline {
+            kind: InlineKind::Link,
+            literal: inline_text(node),
+            destination: Some(link.url.clone()),
+        }),
+        NodeValue::Image(link) => Some(Inline {
+            kind: InlineKind::Image,
+            literal: inline_text(node),
+            destination: Some(link.url.clone()),
+        }),
+        _ => None,
+    }
+}
+
+fn inline_text<'a>(node: &'a MarkdownNode<'a>) -> String {
+    let mut text = String::new();
+
+    collect_inline_text(node, &mut text);
+
+    text
+}
+
+fn collect_inline_text<'a>(node: &'a MarkdownNode<'a>, text: &mut String) {
+    match &node.data.borrow().value {
+        NodeValue::Text(value) => text.push_str(value),
+        NodeValue::Code(code) => text.push_str(&code.literal),
+        _ => {}
+    }
+
+    for child in node.children() {
+        collect_inline_text(child, text);
+    }
+}
+
 fn markdown_options() -> Options<'static> {
     let mut options = Options::default();
     options.extension.table = true;
@@ -117,7 +195,10 @@ fn is_prohibited_line_start(character: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{BlockKind, BlockRole, format_markdown, parse_blocks, wrap_text};
+    use super::{
+        BlockKind, BlockRole, Inline, InlineKind, format_markdown, parse_blocks, parse_inlines,
+        wrap_text,
+    };
 
     #[test]
     fn splits_markdown_into_top_level_blocks() {
@@ -208,6 +289,55 @@ mod tests {
         assert_eq!(BlockKind::BlockQuote.role(), BlockRole::Preserve);
         assert_eq!(BlockKind::ThematicBreak.role(), BlockRole::Preserve);
         assert_eq!(BlockKind::Table.role(), BlockRole::Preserve);
+    }
+
+    #[test]
+    fn detects_inline_code() {
+        let markdown = "本文の `code()` を検出する\n";
+
+        assert_eq!(
+            parse_inlines(markdown),
+            vec![Inline {
+                kind: InlineKind::Code,
+                literal: "code()".to_string(),
+                destination: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn detects_links() {
+        let markdown = "[Rust](https://www.rust-lang.org/) を検出する\n";
+
+        assert_eq!(
+            parse_inlines(markdown),
+            vec![Inline {
+                kind: InlineKind::Link,
+                literal: "Rust".to_string(),
+                destination: Some("https://www.rust-lang.org/".to_string()),
+            }]
+        );
+    }
+
+    #[test]
+    fn detects_images() {
+        let markdown = "![代替テキスト](./image.png)\n";
+
+        assert_eq!(
+            parse_inlines(markdown),
+            vec![Inline {
+                kind: InlineKind::Image,
+                literal: "代替テキスト".to_string(),
+                destination: Some("./image.png".to_string()),
+            }]
+        );
+    }
+
+    #[test]
+    fn reconstructs_markdown_with_inline_syntax() {
+        let markdown = "本文の `code()` と [link](https://example.com/) と ![alt](./image.png) と **強調**。\n";
+
+        assert_eq!(format_markdown(markdown), markdown);
     }
 
     #[test]
