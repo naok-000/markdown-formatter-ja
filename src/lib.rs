@@ -76,15 +76,48 @@ pub fn format_markdown(markdown: &str) -> String {
     output
 }
 
+pub fn wrap_text(text: &str, width: usize) -> String {
+    let mut output = String::new();
+    let mut line_width = 0;
+
+    for character in text.chars() {
+        let character_width = display_width(character);
+
+        if line_width > 0
+            && line_width + character_width > width
+            && !is_prohibited_line_start(character)
+        {
+            output.push('\n');
+            line_width = 0;
+        }
+
+        output.push(character);
+        line_width += character_width;
+    }
+
+    output
+}
+
 fn markdown_options() -> Options<'static> {
     let mut options = Options::default();
     options.extension.table = true;
     options
 }
 
+fn display_width(character: char) -> usize {
+    if character.is_ascii() { 1 } else { 2 }
+}
+
+fn is_prohibited_line_start(character: char) -> bool {
+    matches!(
+        character,
+        '、' | '。' | '，' | '．' | ',' | '.' | ')' | '）' | ']' | '】' | '}' | '」' | '』'
+    )
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{BlockKind, BlockRole, format_markdown, parse_blocks};
+    use super::{BlockKind, BlockRole, format_markdown, parse_blocks, wrap_text};
 
     #[test]
     fn splits_markdown_into_top_level_blocks() {
@@ -175,5 +208,39 @@ mod tests {
         assert_eq!(BlockKind::BlockQuote.role(), BlockRole::Preserve);
         assert_eq!(BlockKind::ThematicBreak.role(), BlockRole::Preserve);
         assert_eq!(BlockKind::Table.role(), BlockRole::Preserve);
+    }
+
+    #[test]
+    fn wraps_text_by_display_width() {
+        assert_eq!(
+            wrap_text("これは日本語の文章です", 10),
+            "これは日本\n語の文章で\nす"
+        );
+    }
+
+    #[test]
+    fn leaves_text_within_width_unchanged() {
+        assert_eq!(wrap_text("これは日本語", 12), "これは日本語");
+    }
+
+    #[test]
+    fn wraps_ascii_text_by_width() {
+        assert_eq!(wrap_text("abcdef", 3), "abc\ndef");
+    }
+
+    #[test]
+    fn does_not_start_wrapped_line_with_punctuation() {
+        assert_eq!(
+            wrap_text("これは日本、文章です", 10),
+            "これは日本、\n文章です"
+        );
+    }
+
+    #[test]
+    fn does_not_start_wrapped_line_with_closing_bracket() {
+        assert_eq!(
+            wrap_text("これは日本）文章です", 10),
+            "これは日本）\n文章です"
+        );
     }
 }
