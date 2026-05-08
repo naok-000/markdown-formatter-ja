@@ -1,9 +1,9 @@
-pub fn wrap_markdown(markdown: &str, width: usize) -> String {
-    wrap_markdown_with_line_break_mode(markdown, width, LineBreakMode::Ignore)
+pub fn wrap_markdown_ignore_break_mode(markdown: &str, width: usize) -> String {
+    wrap_markdown(markdown, width, LineBreakMode::Ignore)
 }
 
 pub fn wrap_markdown_preserving_line_breaks(markdown: &str, width: usize) -> String {
-    wrap_markdown_with_line_break_mode(markdown, width, LineBreakMode::Preserve)
+    wrap_markdown(markdown, width, LineBreakMode::Preserve)
 }
 
 enum LineBreakMode {
@@ -18,7 +18,7 @@ enum MarkdownSegment {
     PreservedLine(String),
 }
 
-fn wrap_markdown_with_line_break_mode(markdown: &str, width: usize, mode: LineBreakMode) -> String {
+fn wrap_markdown(markdown: &str, width: usize, mode: LineBreakMode) -> String {
     let (front_matter, body) = split_front_matter(markdown);
     let mut segments = front_matter_segments(front_matter);
 
@@ -327,8 +327,8 @@ fn text_width(text: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::{
-        LineBreakMode, wrap_markdown, wrap_markdown_preserving_line_breaks,
-        wrap_markdown_with_line_break_mode,
+        LineBreakMode, wrap_markdown, wrap_markdown_ignore_break_mode,
+        wrap_markdown_preserving_line_breaks,
     };
 
     #[test]
@@ -336,7 +336,7 @@ mod tests {
         let markdown = "1行目\n2行目2行目2行目2行目2行目\n3行目";
 
         assert_eq!(
-            wrap_markdown(markdown, 10),
+            wrap_markdown_ignore_break_mode(markdown, 10),
             "1行目2行目\n2行目2行目\n2行目2行目\n3行目"
         );
     }
@@ -346,7 +346,7 @@ mod tests {
         let markdown = "- ああ\n  あああ";
 
         assert_eq!(
-            wrap_markdown_with_line_break_mode(markdown, 6, LineBreakMode::Ignore),
+            wrap_markdown(markdown, 6, LineBreakMode::Ignore),
             "- ああ\n  ああ\n  あ"
         );
     }
@@ -365,13 +365,16 @@ mod tests {
     fn keeps_list_items_separate_when_ignoring_line_breaks() {
         let markdown = "- ああ\n  ああ\n- いい\n  いい";
 
-        assert_eq!(wrap_markdown(markdown, 6), "- ああ\n  ああ\n- いい\n  いい");
+        assert_eq!(
+            wrap_markdown_ignore_break_mode(markdown, 6),
+            "- ああ\n  ああ\n- いい\n  いい"
+        );
     }
 
     #[test]
     fn preserves_heading_marker_and_wraps_heading_text() {
         assert_eq!(
-            wrap_markdown("# これは日本語の見出しです", 10),
+            wrap_markdown_ignore_break_mode("# これは日本語の見出しです", 10),
             "# これは日本\n語の見出し\nです"
         );
     }
@@ -379,7 +382,7 @@ mod tests {
     #[test]
     fn preserves_bullet_list_marker_and_wraps_item_text() {
         assert_eq!(
-            wrap_markdown("- これは日本語の項目です", 10),
+            wrap_markdown_ignore_break_mode("- これは日本語の項目です", 10),
             "- これは日\n  本語の項\n  目です"
         );
     }
@@ -387,7 +390,7 @@ mod tests {
     #[test]
     fn preserves_ordered_list_marker_and_wraps_item_text() {
         assert_eq!(
-            wrap_markdown("1. これは日本語の項目です", 10),
+            wrap_markdown_ignore_break_mode("1. これは日本語の項目です", 10),
             "1. これは\n   日本語\n   の項目\n   です"
         );
     }
@@ -395,7 +398,7 @@ mod tests {
     #[test]
     fn keeps_ascii_words_intact() {
         assert_eq!(
-            wrap_markdown("これはmarkdownの文章です", 10),
+            wrap_markdown_ignore_break_mode("これはmarkdownの文章です", 10),
             "これは\nmarkdownの\n文章です"
         );
     }
@@ -403,7 +406,7 @@ mod tests {
     #[test]
     fn keeps_ascii_word_like_tokens_intact() {
         assert_eq!(
-            wrap_markdown("foo_bar foo-bar example.com path/to/file", 8),
+            wrap_markdown_ignore_break_mode("foo_bar foo-bar example.com path/to/file", 8),
             "foo_bar \nfoo-bar \nexample.com\npath/to/file"
         );
     }
@@ -411,7 +414,7 @@ mod tests {
     #[test]
     fn allows_ascii_words_to_exceed_width() {
         assert_eq!(
-            wrap_markdown("short superlongword", 8),
+            wrap_markdown_ignore_break_mode("short superlongword", 8),
             "short \nsuperlongword"
         );
     }
@@ -419,7 +422,7 @@ mod tests {
     #[test]
     fn counts_multi_digit_ordered_list_marker_in_width() {
         assert_eq!(
-            wrap_markdown("10. これは日本語の項目です", 10),
+            wrap_markdown_ignore_break_mode("10. これは日本語の項目です", 10),
             "10. これは\n    日本語\n    の項目\n    です"
         );
     }
@@ -427,7 +430,7 @@ mod tests {
     #[test]
     fn counts_nested_list_indent_and_marker_in_width() {
         assert_eq!(
-            wrap_markdown("  - これは日本語の項目です", 10),
+            wrap_markdown_ignore_break_mode("  - これは日本語の項目です", 10),
             "  - これは\n    日本語\n    の項目\n    です"
         );
     }
@@ -437,7 +440,7 @@ mod tests {
         let markdown = "```text\nこれは日本語の長いコードです\n```\n";
 
         assert_eq!(
-            wrap_markdown(markdown, 10),
+            wrap_markdown_ignore_break_mode(markdown, 10),
             "```text\nこれは日本語の長いコードです\n```"
         );
     }
@@ -447,7 +450,7 @@ mod tests {
         let markdown = "---\ntitle: \"タイトル\"\nauthor: \"著者\"\ndate: \"2024-06-01\"\noutput: html_document\n---\n\n123456789";
 
         assert_eq!(
-            wrap_markdown(markdown, 5),
+            wrap_markdown_ignore_break_mode(markdown, 5),
             "---\ntitle: \"タイトル\"\nauthor: \"著者\"\ndate: \"2024-06-01\"\noutput: html_document\n---\n\n12345\n6789"
         );
     }
@@ -465,7 +468,7 @@ mod tests {
     #[test]
     fn does_not_wrap_inside_inline_code() {
         assert_eq!(
-            wrap_markdown("これは`日本語のコード`です", 10),
+            wrap_markdown_ignore_break_mode("これは`日本語のコード`です", 10),
             "これは\n`日本語のコード`\nです"
         );
     }
@@ -473,7 +476,7 @@ mod tests {
     #[test]
     fn does_not_wrap_inside_links() {
         assert_eq!(
-            wrap_markdown("これは[日本語のリンク](https://example.com/)です", 10),
+            wrap_markdown_ignore_break_mode("これは[日本語のリンク](https://example.com/)です", 10),
             "これは\n[日本語のリンク](https://example.com/)\nです"
         );
     }

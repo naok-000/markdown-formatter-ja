@@ -3,7 +3,9 @@ use std::io::{self, Read, Write};
 use std::process::ExitCode;
 
 use clap::Parser;
-use markdown_formatter_ja::{wrap_markdown, wrap_markdown_preserving_line_breaks};
+use markdown_formatter_ja::{
+    wrap_markdown_ignore_break_mode, wrap_markdown_preserving_line_breaks,
+};
 
 const DEFAULT_WIDTH: usize = 80;
 
@@ -35,7 +37,7 @@ fn run() -> Result<(), String> {
     let output = if config.preserve_line_breaks {
         wrap_markdown_preserving_line_breaks(&input, config.width)
     } else {
-        wrap_markdown(&input, config.width)
+        wrap_markdown_ignore_break_mode(&input, config.width)
     };
 
     if let Some(path) = &config.path
