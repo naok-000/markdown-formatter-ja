@@ -35,21 +35,38 @@ pub fn wrap_paragraphs(markdown: &str, width: usize) -> String {
 }
 
 pub fn wrap_markdown(markdown: &str, width: usize) -> String {
+    wrap_markdown_segments(preserve_line_break_segments(markdown), width)
+}
+
+enum MarkdownSegment<'a> {
+    WrappableLine(&'a str),
+    PreservedLine(&'a str),
+}
+
+fn preserve_line_break_segments(markdown: &str) -> Vec<MarkdownSegment<'_>> {
+    let mut segments = Vec::new();
     let mut in_code_fence = false;
 
-    markdown
-        .lines()
-        .map(|line| {
-            if line.starts_with("```") {
-                in_code_fence = !in_code_fence;
-                return line.to_string();
-            }
+    for line in markdown.lines() {
+        if line.starts_with("```") {
+            in_code_fence = !in_code_fence;
+            segments.push(MarkdownSegment::PreservedLine(line));
+        } else if in_code_fence {
+            segments.push(MarkdownSegment::PreservedLine(line));
+        } else {
+            segments.push(MarkdownSegment::WrappableLine(line));
+        }
+    }
 
-            if in_code_fence {
-                return line.to_string();
-            }
+    segments
+}
 
-            wrap_markdown_line(line, width)
+fn wrap_markdown_segments(segments: Vec<MarkdownSegment<'_>>, width: usize) -> String {
+    segments
+        .into_iter()
+        .map(|segment| match segment {
+            MarkdownSegment::WrappableLine(line) => wrap_markdown_line(line, width),
+            MarkdownSegment::PreservedLine(line) => line.to_string(),
         })
         .collect::<Vec<_>>()
         .join("\n")
