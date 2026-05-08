@@ -44,3 +44,7 @@ When not using Nix, Rust stable is required.
 nix develop
 cargo test
 ```
+
+## License
+
+Apache-2.0
