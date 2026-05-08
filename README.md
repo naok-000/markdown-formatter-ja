@@ -4,6 +4,8 @@ Markdown formatter for Japanese documents.
 
 ## Usage
 
+By default, existing line breaks inside paragraphs and list items are ignored before wrapping.
+
 Format Markdown from stdin:
 
 ```sh
@@ -20,6 +22,12 @@ Overwrite a file in place:
 
 ```sh
 nix run github:naok-000/markdown-formatter-ja -- --width 80 --write input.md
+```
+
+Preserve existing line breaks:
+
+```sh
+nix run github:naok-000/markdown-formatter-ja -- --width 80 --preserve-line-breaks < input.md
 ```
 
 ## Install with Cargo
