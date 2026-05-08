@@ -1,39 +1,3 @@
-pub fn wrap_text(text: &str, width: usize) -> String {
-    let mut output = String::new();
-    let mut line_width = 0;
-
-    for character in text.chars() {
-        let character_width = display_width(character);
-
-        if line_width > 0
-            && line_width + character_width > width
-            && !is_prohibited_line_start(character)
-        {
-            output.push('\n');
-            line_width = 0;
-        }
-
-        output.push(character);
-        line_width += character_width;
-    }
-
-    output
-}
-
-pub fn wrap_paragraphs(markdown: &str, width: usize) -> String {
-    markdown
-        .split("\n\n")
-        .map(|paragraph| {
-            if paragraph.is_empty() {
-                String::new()
-            } else {
-                wrap_text(paragraph, width)
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n\n")
-}
-
 pub fn wrap_markdown(markdown: &str, width: usize) -> String {
     wrap_markdown_with_line_break_mode(markdown, width, LineBreakMode::Ignore)
 }
@@ -364,62 +328,8 @@ fn text_width(text: &str) -> usize {
 mod tests {
     use super::{
         LineBreakMode, wrap_markdown, wrap_markdown_preserving_line_breaks,
-        wrap_markdown_with_line_break_mode, wrap_paragraphs, wrap_text,
+        wrap_markdown_with_line_break_mode,
     };
-
-    #[test]
-    fn wraps_text_by_display_width() {
-        assert_eq!(
-            wrap_text("これは日本語の文章です", 10),
-            "これは日本\n語の文章で\nす"
-        );
-    }
-
-    #[test]
-    fn leaves_text_within_width_unchanged() {
-        assert_eq!(wrap_text("これは日本語", 12), "これは日本語");
-    }
-
-    #[test]
-    fn wraps_ascii_text_by_width() {
-        assert_eq!(wrap_text("abcdef", 3), "abc\ndef");
-    }
-
-    #[test]
-    fn does_not_start_wrapped_line_with_punctuation() {
-        assert_eq!(
-            wrap_text("これは日本、文章です", 10),
-            "これは日本、\n文章です"
-        );
-    }
-
-    #[test]
-    fn does_not_start_wrapped_line_with_closing_bracket() {
-        assert_eq!(
-            wrap_text("これは日本）文章です", 10),
-            "これは日本）\n文章です"
-        );
-    }
-
-    #[test]
-    fn wraps_multiple_paragraphs_independently() {
-        let markdown = "abcdef\n\nこれは日本語の文章です";
-
-        assert_eq!(
-            wrap_paragraphs(markdown, 10),
-            "abcdef\n\nこれは日本\n語の文章で\nす"
-        );
-    }
-
-    #[test]
-    fn preserves_blank_lines_between_paragraphs() {
-        let markdown = "abcdef\n\n\n\nこれは日本語";
-
-        assert_eq!(
-            wrap_paragraphs(markdown, 10),
-            "abcdef\n\n\n\nこれは日本\n語"
-        );
-    }
 
     #[test]
     fn can_ignore_line_breaks_inside_paragraphs() {
