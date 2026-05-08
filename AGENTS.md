@@ -19,6 +19,8 @@ Adopt Test-Driven Development as advocated by Kent Beck and t_wada.
 
 ## Documentations
 
-- [SPEC.md](./docs/SPEC.md) Define project specifications, including objectives, challenges, and requirements.
-- [TODO.md](./docs/TODO.md) List of tasks and features to implement, following TDD principles.
-- [ADRs](./docs/adr/) Architectural Decision Records documenting key design decisions and their rationale.
+- [SPEC.md](./docs/SPEC.md) Current project purpose, direction, and externally visible requirements. Keep it simple; implementation details and historical notes belong elsewhere.
+- [TODO.md](./docs/TODO.md) TDD working notes for small next steps and deferred ideas. Do not treat it as an authoritative roadmap or exact source-code state.
+- [ADRs](./docs/adr/) Architectural Decision Records documenting key decisions, rejected alternatives, and rationale.
+
+See [ADR 0006](./docs/adr/0006-document-roles-for-spec-todo-and-adr.md) for the roles of `SPEC.md`, `TODO.md`, and ADRs.

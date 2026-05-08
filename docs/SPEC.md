@@ -1,59 +1,44 @@
 # SPEC.md
 
-プロジェクトのSPECを定義するファイル．
-
 ## 目的
 
-Markdown formatterを作成する．
-日本語を含むMarkdown fileのraw textを美しく整形する．
+日本語を含むMarkdownのraw textを読みやすく整形するCLIを作る．
 
 ## 解決したい課題
 
-### Markdown formatterに期待すること
+既存のMarkdown formatterは，日本語文書に対して読みやすい位置で改行しづらい．
+日本語は単語間にspaceがないため，空白位置だけを基準にすると改行位置が偏り，raw textとして読みづらくなる．
 
-- **raw text**で表示されたときに読みやすいこと
-  - 適切な位置で改行されている
+## 方針
 
-### 既存のMarkdown formatterの問題点
-
-- 適切な位置の改行ができない
-  - 既存のMarkdown formatterは空白位置での改行もしくは句読点の改行しかできない．
-  - 日本語はその特性上単語間にスペースが入らないため，改行できる位置が限られる．
-  - 結果，改行位置が統一されず，raw textで表示されたときに読みづらい．
+- Markdownとして正しいfileが入力されることを前提にする
+- raw textで読んだときの読みやすさを優先する
+- 実装詳細や判断理由はADRに残す
 
 ## 要件
 
-### 前提
+- 1行の長さを指定できる
+- 通常段落とリスト項目では，既存の改行位置を無視して指定幅で改行する
+- option指定により，既存の改行位置を維持して指定幅で改行できる
+- 半角文字は幅1，全角文字は幅2として扱う
+- Markdown記法の行頭マーカーも行幅に含める
+- 句読点の前や閉カッコの前では改行しない
+- 英単語の途中では改行しない
+- CLIとして使用できる
+- 標準入力からMarkdownを読み，整形結果を標準出力へ書ける
+- file pathを指定した場合，通常時は整形結果を標準出力へ書ける
+- option指定により，指定したMarkdown fileを直接書き換えられる
+- `--help` で使い方とoption説明を表示できる
+- NixとCargo install --gitで利用できる
 
-- Markdownとして正しいファイルが入力されることは保証されているとしてよい．
+## Optional
 
-### 機能要件
+- 文節を意識した改行
+- conform.nvim からの利用
 
-- 改行位置の指定
-  - 1行の長さを指定できる
-    - 半角文字は幅1，全角文字は幅2として扱う
-    - Markdown記法の行頭マーカーも行幅に含める
-- 意味的に問題ない位置での改行
-  - 句読点の前や閉カッコの前で改行されない
-  - 英単語の途中で改行されない
-  - optional: 意味的に問題ない位置での改行．文節を意識する
-- [0002. Markdownの行頭マーカーと英単語を折り返し単位として扱う](./adr/0002-wrap-markdown-prefixes-and-english-words.md)についても参照する
-- インターフェース
-  - CLIで使用できること
-    - 標準入力からMarkdownを読み，整形結果を標準出力へ書けること
-    - ファイルパスを指定した場合，通常時は整形結果を標準出力へ書けること
-    - オプション指定により，指定したMarkdownファイルを直接書き換えられること
-    - `--help` で使い方とオプション説明を表示できること
-    - コマンドライン引数解析には `clap` などのcrateを使うこと
-    - [0004. CLIのファイル指定時も整形結果を標準出力する](./adr/0004-print-formatted-output-for-file-input.md)についても参照する
-  - optional: comform.nvim から使用できること
+## 関連ADR
 
-### 配布・CI/CD要件
-
-- GitHub Actionsでbuildとtestを実行すること
-- Nix flakeを使い，`nix run github:naok-000/markdown-formatter-ja` で実行できること
-- Cargo経由では，`cargo install --git https://github.com/naok-000/markdown-formatter-ja` でinstallできること
-- ReleaseはGitHub Release機能を使うこと
-- Releaseは `v*` tag pushを起点に自動作成すること
-- 初期CI対象platformは Darwin aarch64 と Linux amd64 とすること
-- [0005. CI/CDと配布方法をNixとCargo install --gitに絞る](./adr/0005-ci-release-and-distribution.md)についても参照する
+- [0002. Markdownの行頭マーカーと英単語を折り返し単位として扱う](./adr/0002-wrap-markdown-prefixes-and-english-words.md)
+- [0004. CLIのファイル指定時も整形結果を標準出力する](./adr/0004-print-formatted-output-for-file-input.md)
+- [0005. CI/CDと配布方法をNixとCargo install --gitに絞る](./adr/0005-ci-release-and-distribution.md)
+- [0006. SPEC.md, TODO.md, ADRの役割を分ける](./adr/0006-document-roles-for-spec-todo-and-adr.md)

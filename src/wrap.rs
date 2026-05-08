@@ -35,21 +35,117 @@ pub fn wrap_paragraphs(markdown: &str, width: usize) -> String {
 }
 
 pub fn wrap_markdown(markdown: &str, width: usize) -> String {
+    wrap_markdown_with_line_break_mode(markdown, width, LineBreakMode::Ignore)
+}
+
+pub fn wrap_markdown_preserving_line_breaks(markdown: &str, width: usize) -> String {
+    wrap_markdown_with_line_break_mode(markdown, width, LineBreakMode::Preserve)
+}
+
+enum LineBreakMode {
+    Preserve,
+    Ignore,
+}
+
+enum MarkdownSegment {
+    WrappableLine(String),
+    WrappableText(String),
+    PrefixedText { prefix: String, text: String },
+    PreservedLine(String),
+}
+
+fn wrap_markdown_with_line_break_mode(markdown: &str, width: usize, mode: LineBreakMode) -> String {
+    let segments = match mode {
+        LineBreakMode::Preserve => preserve_line_break_segments(markdown),
+        LineBreakMode::Ignore => ignore_line_break_segments(markdown),
+    };
+
+    wrap_markdown_segments(segments, width)
+}
+
+fn preserve_line_break_segments(markdown: &str) -> Vec<MarkdownSegment> {
+    let mut segments = Vec::new();
     let mut in_code_fence = false;
 
-    markdown
-        .lines()
-        .map(|line| {
-            if line.starts_with("```") {
-                in_code_fence = !in_code_fence;
-                return line.to_string();
-            }
+    for line in markdown.lines() {
+        if line.starts_with("```") {
+            in_code_fence = !in_code_fence;
+            segments.push(MarkdownSegment::PreservedLine(line.to_string()));
+        } else if in_code_fence {
+            segments.push(MarkdownSegment::PreservedLine(line.to_string()));
+        } else {
+            segments.push(MarkdownSegment::WrappableLine(line.to_string()));
+        }
+    }
 
-            if in_code_fence {
-                return line.to_string();
-            }
+    segments
+}
 
-            wrap_markdown_line(line, width)
+fn ignore_line_break_segments(markdown: &str) -> Vec<MarkdownSegment> {
+    let mut segments = Vec::new();
+    let mut in_code_fence = false;
+    let mut paragraph = String::new();
+    let mut list_item: Option<(String, String)> = None;
+
+    for line in markdown.lines() {
+        if line.starts_with("```") {
+            flush_paragraph_segment(&mut paragraph, &mut segments);
+            flush_list_item_segment(&mut list_item, &mut segments);
+
+            in_code_fence = !in_code_fence;
+            segments.push(MarkdownSegment::PreservedLine(line.to_string()));
+        } else if in_code_fence {
+            segments.push(MarkdownSegment::PreservedLine(line.to_string()));
+        } else if line.is_empty() {
+            flush_paragraph_segment(&mut paragraph, &mut segments);
+            flush_list_item_segment(&mut list_item, &mut segments);
+            segments.push(MarkdownSegment::PreservedLine(String::new()));
+        } else if heading_parts(line).is_some() {
+            flush_paragraph_segment(&mut paragraph, &mut segments);
+            flush_list_item_segment(&mut list_item, &mut segments);
+            segments.push(MarkdownSegment::WrappableLine(line.to_string()));
+        } else if let Some((prefix, text)) = list_item_parts(line) {
+            flush_paragraph_segment(&mut paragraph, &mut segments);
+            flush_list_item_segment(&mut list_item, &mut segments);
+            list_item = Some((prefix.to_string(), text.to_string()));
+        } else if let Some((_, text)) = &mut list_item {
+            text.push_str(line.trim_start());
+        } else {
+            paragraph.push_str(line);
+        }
+    }
+
+    flush_paragraph_segment(&mut paragraph, &mut segments);
+    flush_list_item_segment(&mut list_item, &mut segments);
+
+    segments
+}
+
+fn flush_paragraph_segment(paragraph: &mut String, segments: &mut Vec<MarkdownSegment>) {
+    if !paragraph.is_empty() {
+        segments.push(MarkdownSegment::WrappableText(std::mem::take(paragraph)));
+    }
+}
+
+fn flush_list_item_segment(
+    list_item: &mut Option<(String, String)>,
+    segments: &mut Vec<MarkdownSegment>,
+) {
+    if let Some((prefix, text)) = list_item.take() {
+        segments.push(MarkdownSegment::PrefixedText { prefix, text });
+    }
+}
+
+fn wrap_markdown_segments(segments: Vec<MarkdownSegment>, width: usize) -> String {
+    segments
+        .into_iter()
+        .map(|segment| match segment {
+            MarkdownSegment::WrappableLine(line) => wrap_markdown_line(&line, width),
+            MarkdownSegment::WrappableText(text) => wrap_markdown_text(&text, width),
+            MarkdownSegment::PrefixedText { prefix, text } => {
+                wrap_with_prefix(&prefix, &text, width)
+            }
+            MarkdownSegment::PreservedLine(line) => line,
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -230,7 +326,10 @@ fn text_width(text: &str) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{wrap_markdown, wrap_paragraphs, wrap_text};
+    use super::{
+        LineBreakMode, wrap_markdown, wrap_markdown_preserving_line_breaks,
+        wrap_markdown_with_line_break_mode, wrap_paragraphs, wrap_text,
+    };
 
     #[test]
     fn wraps_text_by_display_width() {
@@ -284,6 +383,43 @@ mod tests {
             wrap_paragraphs(markdown, 10),
             "abcdef\n\n\n\nこれは日本\n語"
         );
+    }
+
+    #[test]
+    fn can_ignore_line_breaks_inside_paragraphs() {
+        let markdown = "1行目\n2行目2行目2行目2行目2行目\n3行目";
+
+        assert_eq!(
+            wrap_markdown(markdown, 10),
+            "1行目2行目\n2行目2行目\n2行目2行目\n3行目"
+        );
+    }
+
+    #[test]
+    fn can_ignore_line_breaks_inside_list_items() {
+        let markdown = "- ああ\n  あああ";
+
+        assert_eq!(
+            wrap_markdown_with_line_break_mode(markdown, 6, LineBreakMode::Ignore),
+            "- ああ\n  ああ\n  あ"
+        );
+    }
+
+    #[test]
+    fn can_preserve_line_breaks_with_internal_mode() {
+        let markdown = "1行目\n2行目2行目2行目2行目2行目\n3行目";
+
+        assert_eq!(
+            wrap_markdown_preserving_line_breaks(markdown, 10),
+            "1行目\n2行目2行目\n2行目2行目\n2行目\n3行目"
+        );
+    }
+
+    #[test]
+    fn keeps_list_items_separate_when_ignoring_line_breaks() {
+        let markdown = "- ああ\n  ああ\n- いい\n  いい";
+
+        assert_eq!(wrap_markdown(markdown, 6), "- ああ\n  ああ\n- いい\n  いい");
     }
 
     #[test]

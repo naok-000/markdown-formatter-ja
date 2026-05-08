@@ -3,7 +3,7 @@ use std::io::{self, Read, Write};
 use std::process::ExitCode;
 
 use clap::Parser;
-use markdown_formatter_ja::wrap_markdown;
+use markdown_formatter_ja::{wrap_markdown, wrap_markdown_preserving_line_breaks};
 
 const DEFAULT_WIDTH: usize = 80;
 
@@ -12,6 +12,8 @@ const DEFAULT_WIDTH: usize = 80;
 struct Config {
     #[arg(long, default_value_t = DEFAULT_WIDTH)]
     width: usize,
+    #[arg(long)]
+    preserve_line_breaks: bool,
     #[arg(long, requires = "path")]
     write: bool,
     path: Option<String>,
@@ -30,7 +32,11 @@ fn main() -> ExitCode {
 fn run() -> Result<(), String> {
     let config = Config::parse();
     let input = read_input(config.path.as_deref())?;
-    let output = wrap_markdown(&input, config.width);
+    let output = if config.preserve_line_breaks {
+        wrap_markdown_preserving_line_breaks(&input, config.width)
+    } else {
+        wrap_markdown(&input, config.width)
+    };
 
     if let Some(path) = &config.path
         && config.write
