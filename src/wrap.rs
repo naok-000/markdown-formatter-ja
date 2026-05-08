@@ -55,12 +55,48 @@ enum MarkdownSegment {
 }
 
 fn wrap_markdown_with_line_break_mode(markdown: &str, width: usize, mode: LineBreakMode) -> String {
-    let segments = match mode {
-        LineBreakMode::Preserve => preserve_line_break_segments(markdown),
-        LineBreakMode::Ignore => ignore_line_break_segments(markdown),
-    };
+    let (front_matter, body) = split_front_matter(markdown);
+    let mut segments = front_matter_segments(front_matter);
+
+    segments.extend(match mode {
+        LineBreakMode::Preserve => preserve_line_break_segments(body),
+        LineBreakMode::Ignore => ignore_line_break_segments(body),
+    });
 
     wrap_markdown_segments(segments, width)
+}
+
+fn split_front_matter(markdown: &str) -> (&str, &str) {
+    let Some(end) = front_matter_end(markdown) else {
+        return ("", markdown);
+    };
+
+    markdown.split_at(end)
+}
+
+fn front_matter_end(markdown: &str) -> Option<usize> {
+    if !markdown.starts_with("---\n") {
+        return None;
+    }
+
+    let mut offset = "---\n".len();
+
+    for line in markdown[offset..].split_inclusive('\n') {
+        if line.trim_end_matches('\n') == "---" {
+            return Some(offset + line.len());
+        }
+
+        offset += line.len();
+    }
+
+    None
+}
+
+fn front_matter_segments(front_matter: &str) -> Vec<MarkdownSegment> {
+    front_matter
+        .lines()
+        .map(|line| MarkdownSegment::PreservedLine(line.to_string()))
+        .collect()
 }
 
 fn preserve_line_break_segments(markdown: &str) -> Vec<MarkdownSegment> {
@@ -299,7 +335,7 @@ fn ascii_word_end(text: &str) -> Option<usize> {
     let mut characters = text.char_indices();
     let (_, first) = characters.next()?;
 
-    if !first.is_ascii_alphanumeric() {
+    if !first.is_ascii_alphabetic() {
         return None;
     }
 
@@ -493,6 +529,26 @@ mod tests {
         assert_eq!(
             wrap_markdown(markdown, 10),
             "```text\nこれは日本語の長いコードです\n```"
+        );
+    }
+
+    #[test]
+    fn preserves_front_matter_at_document_start() {
+        let markdown = "---\ntitle: \"タイトル\"\nauthor: \"著者\"\ndate: \"2024-06-01\"\noutput: html_document\n---\n\n123456789";
+
+        assert_eq!(
+            wrap_markdown(markdown, 5),
+            "---\ntitle: \"タイトル\"\nauthor: \"著者\"\ndate: \"2024-06-01\"\noutput: html_document\n---\n\n12345\n6789"
+        );
+    }
+
+    #[test]
+    fn preserves_front_matter_when_preserving_line_breaks() {
+        let markdown = "---\ntitle: \"タイトル\"\n---\n\n123456789";
+
+        assert_eq!(
+            wrap_markdown_preserving_line_breaks(markdown, 5),
+            "---\ntitle: \"タイトル\"\n---\n\n12345\n6789"
         );
     }
 
