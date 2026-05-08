@@ -34,6 +34,7 @@
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = with pkgs; [
             alejandra
+            lefthook
             rust-analyzer
             (pkgs.fenix.stable.withComponents [
               "cargo"
