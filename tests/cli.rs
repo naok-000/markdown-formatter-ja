@@ -26,7 +26,7 @@ fn formats_markdown_from_stdin_to_stdout() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "これは日本語の文章です"
+        "これは日本語の文章です\n"
     );
     assert_eq!(String::from_utf8(output.stderr).unwrap(), "");
 }
@@ -52,7 +52,7 @@ fn accepts_width_option() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "これは日本\n語の文章で\nす"
+        "これは日本\n語の文章で\nす\n"
     );
 }
 
@@ -77,7 +77,7 @@ fn ignores_existing_line_breaks_by_default() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "1行目2行目\n2行目2行目\n2行目2行目\n3行目"
+        "1行目2行目\n2行目2行目\n2行目2行目\n3行目\n"
     );
 }
 
@@ -102,7 +102,7 @@ fn preserves_existing_line_breaks_with_option() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "1行目\n2行目2行目\n2行目2行目\n2行目\n3行目"
+        "1行目\n2行目2行目\n2行目2行目\n2行目\n3行目\n"
     );
 }
 
@@ -126,7 +126,7 @@ fn uses_default_width_when_width_is_omitted() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        format!("{}\nあ", "あ".repeat(40))
+        format!("{}\nあ\n", "あ".repeat(40))
     );
 }
 
@@ -148,7 +148,7 @@ fn formats_markdown_from_file_path_to_stdout() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "これは日本\n語の文章で\nす"
+        "これは日本\n語の文章で\nす\n"
     );
 }
 
@@ -170,7 +170,7 @@ fn writes_formatted_output_with_write_option() {
 
     assert!(output.status.success());
     assert_eq!(String::from_utf8(output.stdout).unwrap(), "");
-    assert_eq!(file_content, "これは日本\n語の文章で\nす");
+    assert_eq!(file_content, "これは日本\n語の文章で\nす\n");
 }
 
 #[test]

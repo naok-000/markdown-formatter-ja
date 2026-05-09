@@ -8,9 +8,9 @@ We are building _markdown-formatter-ja_, a tool to format markdown files, with a
 
 Adopt Test-Driven Development as advocated by Kent Beck and t_wada.
 
-- **Write Small Tests First**
-- **Pass Tests in Simple Ways**
-- **Refactor for Clarity and Performance**
+1. **Write Small Tests First**
+2. **Pass Tests in Simple Ways**
+3. **Refactor for Clarity and Performance**
 
 ## Rules
 
