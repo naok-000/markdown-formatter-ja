@@ -3,7 +3,7 @@ use std::io::{self, Read, Write};
 use std::process::ExitCode;
 
 use clap::Parser;
-use markdown_formatter_ja::{wrap_markdown, wrap_markdown_preserving_line_breaks};
+use markdown_formatter_ja::{FormatOptions, LineBreakMode, format_markdown};
 
 const DEFAULT_WIDTH: usize = 80;
 
@@ -32,11 +32,18 @@ fn main() -> ExitCode {
 fn run() -> Result<(), String> {
     let config = Config::parse();
     let input = read_input(config.path.as_deref())?;
-    let output = if config.preserve_line_breaks {
-        wrap_markdown_preserving_line_breaks(&input, config.width)
+    let line_break_mode = if config.preserve_line_breaks {
+        LineBreakMode::Preserve
     } else {
-        wrap_markdown(&input, config.width)
+        LineBreakMode::Ignore
     };
+    let output = format_markdown(
+        &input,
+        FormatOptions {
+            width: config.width,
+            line_break_mode,
+        },
+    );
 
     if let Some(path) = &config.path
         && config.write
