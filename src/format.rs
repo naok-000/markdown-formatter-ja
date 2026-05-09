@@ -346,208 +346,313 @@ fn text_width(text: &str) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{FormatOptions, LineBreakMode, format_markdown};
+    use super::*;
 
-    fn ignore(width: usize) -> FormatOptions {
-        FormatOptions {
-            width,
-            line_break_mode: LineBreakMode::Ignore,
+    #[derive(Debug, Eq, PartialEq)]
+    enum PieceSummary {
+        Text(String),
+        Atom(&'static str),
+        SoftBreak,
+        HardBreak,
+    }
+
+    fn parse<'a>(arena: &'a Arena<'a>, markdown: &str) -> &'a AstNode<'a> {
+        parse_document(arena, markdown, &comrak_options())
+    }
+
+    fn first_node<'a>(
+        root: &'a AstNode<'a>,
+        predicate: impl Fn(&AstNode<'a>) -> bool,
+    ) -> &'a AstNode<'a> {
+        root.descendants().find(|node| predicate(node)).unwrap()
+    }
+
+    fn paragraphs<'a>(root: &'a AstNode<'a>) -> Vec<&'a AstNode<'a>> {
+        root.descendants()
+            .filter(|node| matches!(&node.data.borrow().value, NodeValue::Paragraph))
+            .collect()
+    }
+
+    fn summarize_pieces(pieces: Vec<InlinePiece<'_>>) -> Vec<PieceSummary> {
+        pieces.into_iter().map(summarize_piece).collect()
+    }
+
+    fn summarize_piece(piece: InlinePiece<'_>) -> PieceSummary {
+        match piece {
+            InlinePiece::Text(text) => PieceSummary::Text(text),
+            InlinePiece::Atom(node) => PieceSummary::Atom(atom_name(node)),
+            InlinePiece::Break(BreakKind::Soft) => PieceSummary::SoftBreak,
+            InlinePiece::Break(BreakKind::Hard) => PieceSummary::HardBreak,
         }
     }
 
-    fn preserve(width: usize) -> FormatOptions {
-        FormatOptions {
-            width,
-            line_break_mode: LineBreakMode::Preserve,
+    fn summarize_children<'a>(node: &'a AstNode<'a>) -> Vec<PieceSummary> {
+        node.children()
+            .map(|child| match &child.data.borrow().value {
+                NodeValue::Text(text) => PieceSummary::Text(text.to_string()),
+                NodeValue::SoftBreak => PieceSummary::SoftBreak,
+                NodeValue::LineBreak => PieceSummary::HardBreak,
+                _ => PieceSummary::Atom(atom_name(child)),
+            })
+            .collect()
+    }
+
+    fn atom_name<'a>(node: &'a AstNode<'a>) -> &'static str {
+        match &node.data.borrow().value {
+            NodeValue::Code(_) => "code",
+            NodeValue::Emph => "emph",
+            NodeValue::Link(_) => "link",
+            NodeValue::Image(_) => "image",
+            NodeValue::Strong => "strong",
+            _ => "atom",
         }
     }
 
     #[test]
-    fn can_ignore_line_breaks_inside_paragraphs() {
-        let markdown = "1行目\n2行目2行目2行目2行目2行目\n3行目";
+    fn text_width_counts_ascii_as_one_and_non_ascii_as_two() {
+        assert_eq!(display_width('a'), 1);
+        assert_eq!(display_width('あ'), 2);
+        assert_eq!(text_width("aあ。"), 5);
+    }
+
+    #[test]
+    fn ascii_word_len_accepts_word_like_ascii_tokens() {
+        assert_eq!(ascii_word_len("markdownの文章"), Some(8));
+        assert_eq!(ascii_word_len("foo_bar foo"), Some(7));
+        assert_eq!(ascii_word_len("path/to/file"), Some(12));
+        assert_eq!(ascii_word_len("あmarkdown"), None);
+        assert_eq!(ascii_word_len("1markdown"), None);
+        assert_eq!(ascii_word_len(""), None);
+    }
+
+    #[test]
+    fn push_text_pieces_splits_japanese_by_character_and_keeps_ascii_words() {
+        let mut pieces = Vec::new();
+
+        push_text_pieces("あmarkdown。", &mut pieces);
 
         assert_eq!(
-            format_markdown(markdown, ignore(10)),
-            "1行目2行目\n2行目2行目\n2行目2行目\n3行目\n"
+            summarize_pieces(pieces),
+            vec![
+                PieceSummary::Text("あ".to_owned()),
+                PieceSummary::Text("markdown".to_owned()),
+                PieceSummary::Text("。".to_owned())
+            ]
         );
     }
 
     #[test]
-    fn can_ignore_line_breaks_inside_list_items() {
-        let markdown = "- ああ\n  あああ";
+    fn line_widths_subtract_prefixes_and_keep_one_column() {
+        let widths = LineWidths::new(
+            10,
+            PrefixWidths {
+                first: 4,
+                continuation: 2,
+            },
+        );
+
+        assert_eq!(widths.first, 6);
+        assert_eq!(widths.continuation, 8);
+
+        let narrow_widths = LineWidths::new(
+            1,
+            PrefixWidths {
+                first: 4,
+                continuation: 2,
+            },
+        );
+
+        assert_eq!(narrow_widths.first, 1);
+        assert_eq!(narrow_widths.continuation, 1);
+    }
+
+    #[test]
+    fn detects_prohibited_line_start_characters() {
+        assert!(is_prohibited_line_start('。'));
+        assert!(is_prohibited_line_start('）'));
+        assert!(starts_with_prohibited_line_start("、続き"));
+        assert!(!is_prohibited_line_start('あ'));
+        assert!(!starts_with_prohibited_line_start("本文"));
+        assert!(!starts_with_prohibited_line_start(""));
+    }
+
+    #[test]
+    fn list_marker_width_counts_bullets_and_ordered_digits() {
+        let arena = Arena::new();
+        let root = parse(&arena, "- item\n\n123. item");
+        let lists = root
+            .descendants()
+            .filter(|node| matches!(&node.data.borrow().value, NodeValue::List(_)))
+            .collect::<Vec<_>>();
+
+        let NodeValue::List(bullet_list) = &lists[0].data.borrow().value else {
+            unreachable!();
+        };
+        assert_eq!(list_marker_width(bullet_list), 2);
+
+        let NodeValue::List(ordered_list) = &lists[1].data.borrow().value else {
+            unreachable!();
+        };
+        assert_eq!(list_marker_width(ordered_list), 5);
+    }
+
+    #[test]
+    fn prefix_widths_count_list_blockquote_and_task_markers() {
+        let arena = Arena::new();
+        let bullet = parse(&arena, "- 子");
+        let bullet_widths = prefix_widths(paragraphs(bullet)[0]);
+
+        assert_eq!(bullet_widths.first, 2);
+        assert_eq!(bullet_widths.continuation, 2);
+
+        let arena = Arena::new();
+        let ordered = parse(&arena, "10. 子");
+        let ordered_widths = prefix_widths(paragraphs(ordered)[0]);
+
+        assert_eq!(ordered_widths.first, 4);
+        assert_eq!(ordered_widths.continuation, 4);
+
+        let arena = Arena::new();
+        let blockquote = parse(&arena, "> 子");
+        let blockquote_widths = prefix_widths(paragraphs(blockquote)[0]);
+
+        assert_eq!(blockquote_widths.first, 2);
+        assert_eq!(blockquote_widths.continuation, 2);
+
+        let arena = Arena::new();
+        let task = parse(&arena, "- [x] 子");
+        let task_widths = prefix_widths(paragraphs(task)[0]);
+
+        assert_eq!(task_widths.first, 6);
+        assert_eq!(task_widths.continuation, 2);
+    }
+
+    #[test]
+    fn wrappable_blocks_are_paragraphs_outside_tables() {
+        let arena = Arena::new();
+        let root = parse(&arena, "# 見出し\n\n本文\n\n| 見出し |\n| --- |\n| 値 |");
+        let paragraph = paragraphs(root)[0];
+        let heading = first_node(root, |node| {
+            matches!(&node.data.borrow().value, NodeValue::Heading(_))
+        });
+        let table_text = first_node(
+            root,
+            |node| matches!(&node.data.borrow().value, NodeValue::Text(text) if text == "値"),
+        );
+
+        assert!(is_wrappable_block(paragraph));
+        assert!(!is_wrappable_block(heading));
+        assert!(has_table_ancestor(table_text));
+    }
+
+    #[test]
+    fn collect_inline_pieces_respects_line_break_mode() {
+        let arena = Arena::new();
+        let root = parse(&arena, "a\nb");
+        let paragraph = paragraphs(root)[0];
 
         assert_eq!(
-            format_markdown(markdown, ignore(6)),
-            "- ああ\n  ああ\n  あ\n"
+            summarize_pieces(collect_inline_pieces(paragraph, LineBreakMode::Ignore)),
+            vec![
+                PieceSummary::Text("a".to_owned()),
+                PieceSummary::Text("b".to_owned())
+            ]
+        );
+        assert_eq!(
+            summarize_pieces(collect_inline_pieces(paragraph, LineBreakMode::Preserve)),
+            vec![
+                PieceSummary::Text("a".to_owned()),
+                PieceSummary::SoftBreak,
+                PieceSummary::Text("b".to_owned())
+            ]
+        );
+
+        let arena = Arena::new();
+        let root = parse(&arena, "a  \nb");
+        let paragraph = paragraphs(root)[0];
+
+        assert_eq!(
+            summarize_pieces(collect_inline_pieces(paragraph, LineBreakMode::Ignore)),
+            vec![
+                PieceSummary::Text("a".to_owned()),
+                PieceSummary::HardBreak,
+                PieceSummary::Text("b".to_owned())
+            ]
         );
     }
 
     #[test]
-    fn can_preserve_line_breaks_with_internal_mode() {
-        let markdown = "1行目\n2行目2行目2行目2行目2行目\n3行目";
+    fn inline_markdown_width_counts_inline_markup() {
+        let arena = Arena::new();
+        let root = parse(&arena, "`日本語` [日本語](https://example.com/) *強調*");
+        let code = first_node(root, |node| {
+            matches!(&node.data.borrow().value, NodeValue::Code(_))
+        });
+        let link = first_node(root, |node| {
+            matches!(&node.data.borrow().value, NodeValue::Link(_))
+        });
+        let emphasis = first_node(root, |node| {
+            matches!(&node.data.borrow().value, NodeValue::Emph)
+        });
 
-        assert_eq!(
-            format_markdown(markdown, preserve(10)),
-            "1行目\n2行目2行目\n2行目2行目\n2行目\n3行目\n"
-        );
+        assert_eq!(inline_markdown_width(code), 8);
+        assert_eq!(inline_markdown_width(link), 30);
+        assert_eq!(inline_markdown_width(emphasis), 6);
     }
 
     #[test]
-    fn keeps_list_items_separate_when_ignoring_line_breaks() {
-        let markdown = "- ああ\n  ああ\n- いい\n  いい";
+    fn replace_inline_children_wraps_text_and_keeps_prohibited_starts_attached() {
+        let arena = Arena::new();
+        let paragraph = new_node(&arena, NodeValue::Paragraph);
 
-        assert_eq!(
-            format_markdown(markdown, ignore(6)),
-            "- ああ\n  ああ\n- いい\n  いい\n"
+        replace_inline_children(
+            &arena,
+            paragraph,
+            vec![
+                InlinePiece::Text("あ".to_owned()),
+                InlinePiece::Text("あ".to_owned()),
+                InlinePiece::Text("あ".to_owned()),
+            ],
+            LineWidths {
+                first: 4,
+                continuation: 4,
+            },
         );
-    }
 
-    #[test]
-    fn preserves_heading_as_single_commonmark_block() {
         assert_eq!(
-            format_markdown("# これは日本語の見出しです", ignore(10)),
-            "# これは日本語の見出しです\n"
+            summarize_children(paragraph),
+            vec![
+                PieceSummary::Text("あ".to_owned()),
+                PieceSummary::Text("あ".to_owned()),
+                PieceSummary::SoftBreak,
+                PieceSummary::Text("あ".to_owned())
+            ]
         );
-    }
 
-    #[test]
-    fn preserves_bullet_list_marker_and_wraps_item_text() {
-        assert_eq!(
-            format_markdown("- これは日本語の項目です", ignore(10)),
-            "- これは日\n  本語の項\n  目です\n"
+        let arena = Arena::new();
+        let paragraph = new_node(&arena, NodeValue::Paragraph);
+
+        replace_inline_children(
+            &arena,
+            paragraph,
+            vec![
+                InlinePiece::Text("あ".to_owned()),
+                InlinePiece::Text("あ".to_owned()),
+                InlinePiece::Text("。".to_owned()),
+            ],
+            LineWidths {
+                first: 4,
+                continuation: 4,
+            },
         );
-    }
-
-    #[test]
-    fn preserves_ordered_list_marker_and_wraps_item_text() {
-        assert_eq!(
-            format_markdown("1. これは日本語の項目です", ignore(10)),
-            "1. これは\n   日本語\n   の項目\n   です\n"
-        );
-    }
-
-    #[test]
-    fn keeps_ascii_words_intact() {
-        assert_eq!(
-            format_markdown("これはmarkdownの文章です", ignore(10)),
-            "これは\nmarkdownの\n文章です\n"
-        );
-    }
-
-    #[test]
-    fn keeps_ascii_word_like_tokens_intact() {
-        assert_eq!(
-            format_markdown("foo_bar foo-bar example.com path/to/file", ignore(8)),
-            "foo\\_bar \nfoo-bar \nexample.com\npath/to/file\n"
-        );
-    }
-
-    #[test]
-    fn allows_ascii_words_to_exceed_width() {
-        assert_eq!(
-            format_markdown("short superlongword", ignore(8)),
-            "short \nsuperlongword\n"
-        );
-    }
-
-    #[test]
-    fn counts_multi_digit_ordered_list_marker_in_width() {
-        assert_eq!(
-            format_markdown("10. これは日本語の項目です", ignore(10)),
-            "10. これは\n    日本語\n    の項目\n    です\n"
-        );
-    }
-
-    #[test]
-    fn normalizes_top_level_list_indent() {
-        assert_eq!(
-            format_markdown("  - これは日本語の項目です", ignore(10)),
-            "- これは日\n  本語の項\n  目です\n"
-        );
-    }
-
-    #[test]
-    fn counts_nested_list_prefix_in_width() {
-        let markdown = "- 親\n  - これは日本語の項目です";
 
         assert_eq!(
-            format_markdown(markdown, ignore(10)),
-            "- 親\n  - これは\n    日本語\n    の項目\n    です\n"
-        );
-    }
-
-    #[test]
-    fn counts_blockquote_marker_in_width() {
-        assert_eq!(
-            format_markdown("> これは日本語の引用です", ignore(10)),
-            "> これは日\n> 本語の引\n> 用です\n"
-        );
-    }
-
-    #[test]
-    fn preserves_text_inside_code_fences() {
-        let markdown = "```text\nこれは日本語の長いコードです\n```\n";
-
-        assert_eq!(
-            format_markdown(markdown, ignore(10)),
-            "```text\nこれは日本語の長いコードです\n```\n"
-        );
-    }
-
-    #[test]
-    fn preserves_front_matter_at_document_start() {
-        let markdown = "---\ntitle: \"タイトル\"\nauthor: \"著者\"\ndate: \"2024-06-01\"\noutput: html_document\n---\n\n123456789";
-
-        assert_eq!(
-            format_markdown(markdown, ignore(5)),
-            "---\ntitle: \"タイトル\"\nauthor: \"著者\"\ndate: \"2024-06-01\"\noutput: html_document\n---\n\n12345\n6789\n"
-        );
-    }
-
-    #[test]
-    fn preserves_front_matter_when_preserving_line_breaks() {
-        let markdown = "---\ntitle: \"タイトル\"\n---\n\n123456789";
-
-        assert_eq!(
-            format_markdown(markdown, preserve(5)),
-            "---\ntitle: \"タイトル\"\n---\n\n12345\n6789\n"
-        );
-    }
-
-    #[test]
-    fn does_not_wrap_inside_inline_code() {
-        assert_eq!(
-            format_markdown("これは`日本語のコード`です", ignore(10)),
-            "これは\n`日本語のコード`\nです\n"
-        );
-    }
-
-    #[test]
-    fn does_not_wrap_inside_links() {
-        assert_eq!(
-            format_markdown(
-                "これは[日本語のリンク](https://example.com/)です",
-                ignore(10)
-            ),
-            "これは\n[日本語のリンク](https://example.com/)\nです\n"
-        );
-    }
-
-    #[test]
-    fn preserves_tables_as_markdown_structure() {
-        let markdown = "| 見出し | 値 |\n| --- | --- |\n| これは長いセルです | 1 |\n";
-
-        assert_eq!(
-            format_markdown(markdown, ignore(10)),
-            "| 見出し | 値 |\n| --- | --- |\n| これは長いセルです | 1 |\n"
-        );
-    }
-
-    #[test]
-    fn preserves_task_list_markers() {
-        assert_eq!(
-            format_markdown("- [x] これは日本語の項目です", ignore(12)),
-            "- [x] これは\n  日本語の項\n  目です\n"
+            summarize_children(paragraph),
+            vec![
+                PieceSummary::Text("あ".to_owned()),
+                PieceSummary::Text("あ".to_owned()),
+                PieceSummary::Text("。".to_owned())
+            ]
         );
     }
 }
