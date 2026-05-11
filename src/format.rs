@@ -36,6 +36,7 @@ fn comrak_options() -> Options<'static> {
     options.extension.strikethrough = true;
     options.extension.autolink = true;
     options.extension.cjk_friendly_emphasis = true;
+    options.extension.math_dollars = true;
     options.render.prefer_fenced = true;
     options.render.width = 0;
 
@@ -267,6 +268,7 @@ fn inline_markdown_width<'a>(node: &'a AstNode<'a>) -> usize {
     match &node.data.borrow().value {
         NodeValue::Text(text) => text_width(text),
         NodeValue::Code(code) => code.num_backticks * 2 + text_width(&code.literal),
+        NodeValue::Math(math) => math_markdown_width(math),
         NodeValue::HtmlInline(html) | NodeValue::Raw(html) => text_width(html),
         NodeValue::LineBreak | NodeValue::SoftBreak => 0,
         NodeValue::TaskItem(_) => 4,
@@ -294,6 +296,16 @@ fn inline_markdown_width<'a>(node: &'a AstNode<'a>) -> usize {
         NodeValue::Superscript | NodeValue::Subscript => inline_children_width(node) + 2,
         _ => inline_children_width(node),
     }
+}
+
+fn math_markdown_width(math: &comrak::nodes::NodeMath) -> usize {
+    let delimiter_width = if math.dollar_math {
+        if math.display_math { 2 } else { 1 }
+    } else {
+        2
+    };
+
+    delimiter_width * 2 + text_width(&math.literal)
 }
 
 fn inline_children_width<'a>(node: &'a AstNode<'a>) -> usize {
@@ -584,7 +596,10 @@ mod tests {
     #[test]
     fn inline_markdown_width_counts_inline_markup() {
         let arena = Arena::new();
-        let root = parse(&arena, "`日本語` [日本語](https://example.com/) *強調*");
+        let root = parse(
+            &arena,
+            "`日本語` [日本語](https://example.com/) *強調* $$a_b$$",
+        );
         let code = first_node(root, |node| {
             matches!(&node.data.borrow().value, NodeValue::Code(_))
         });
@@ -594,10 +609,14 @@ mod tests {
         let emphasis = first_node(root, |node| {
             matches!(&node.data.borrow().value, NodeValue::Emph)
         });
+        let math = first_node(root, |node| {
+            matches!(&node.data.borrow().value, NodeValue::Math(_))
+        });
 
         assert_eq!(inline_markdown_width(code), 8);
         assert_eq!(inline_markdown_width(link), 30);
         assert_eq!(inline_markdown_width(emphasis), 6);
+        assert_eq!(inline_markdown_width(math), 7);
     }
 
     #[test]

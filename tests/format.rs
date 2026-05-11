@@ -95,6 +95,20 @@ fn keeps_ascii_word_like_tokens_intact() {
 }
 
 #[test]
+fn preserves_underscore_inside_dollar_math() {
+    assert_eq!(format_markdown("$$a_b$$", ignore(10)), "$$a_b$$\n");
+    assert_eq!(format_markdown("$a_b$", ignore(10)), "$a_b$\n");
+}
+
+#[test]
+fn keeps_dollar_math_as_an_atomic_inline() {
+    assert_eq!(
+        format_markdown("これは$$a_b$$です", ignore(8)),
+        "これは\n$$a_b$$\nです\n"
+    );
+}
+
+#[test]
 fn allows_ascii_words_to_exceed_width() {
     assert_eq!(
         format_markdown("short superlongword", ignore(8)),
