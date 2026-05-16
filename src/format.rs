@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::ops::Range;
 
 use comrak::nodes::{Ast, AstNode, LineColumn, ListType, NodeList, NodeValue};
 use comrak::{Arena, Options, format_commonmark, parse_document};
@@ -54,19 +55,109 @@ fn comrak_options() -> Options<'static> {
 }
 
 fn minimize_backslash_escapes(markdown: &str, options: &Options<'_>) -> String {
-    let baseline = normalize_commonmark(markdown, options);
-    let mut output = markdown.to_owned();
+    let candidate = remove_candidate_backslash_escapes(markdown);
+
+    if candidate == markdown {
+        return candidate;
+    }
+
+    if normalize_commonmark(&candidate, options) == markdown {
+        candidate
+    } else {
+        markdown.to_owned()
+    }
+}
+
+fn remove_candidate_backslash_escapes(markdown: &str) -> String {
+    let mut output = String::with_capacity(markdown.len());
+    let mut start = 0;
+    let literal_ranges = backslash_literal_ranges(markdown);
+    let mut literal_range_index = 0;
+    let bytes = markdown.as_bytes();
+
+    for index in 0..bytes.len().saturating_sub(1) {
+        while literal_range_index < literal_ranges.len()
+            && literal_ranges[literal_range_index].end <= index
+        {
+            literal_range_index += 1;
+        }
+
+        let is_literal = literal_ranges
+            .get(literal_range_index)
+            .is_some_and(|range| range.start <= index && index < range.end);
+
+        if bytes[index] == b'\\'
+            && bytes[index + 1].is_ascii_punctuation()
+            && !is_literal
+            && !is_structural_escape(markdown, index)
+        {
+            output.push_str(&markdown[start..index]);
+            start = index + 1;
+        }
+    }
+
+    output.push_str(&markdown[start..]);
+    output
+}
+
+fn backslash_literal_ranges(markdown: &str) -> Vec<Range<usize>> {
+    let mut ranges = fenced_code_ranges(markdown);
+
+    ranges.extend(inline_code_ranges(markdown));
+    ranges.extend(angle_bracket_ranges(markdown));
+    ranges.sort_by_key(|range| range.start);
+
+    ranges
+}
+
+fn fenced_code_ranges(markdown: &str) -> Vec<Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut fence_start = None;
+    let mut fence_marker = b'\0';
+    let mut line_start = 0;
+
+    for line in markdown.split_inclusive('\n') {
+        let line_end = line_start + line.len();
+        let content = line.trim_end_matches('\n').trim_end_matches('\r');
+        let bytes = content.as_bytes();
+
+        if let Some(start) = fence_start {
+            if starts_with_fence(bytes, fence_marker) {
+                ranges.push(start..line_end);
+                fence_start = None;
+            }
+        } else if starts_with_fence(bytes, b'`') || starts_with_fence(bytes, b'~') {
+            fence_start = Some(line_start);
+            fence_marker = bytes[0];
+        }
+
+        line_start = line_end;
+    }
+
+    if let Some(start) = fence_start {
+        ranges.push(start..markdown.len());
+    }
+
+    ranges
+}
+
+fn starts_with_fence(line: &[u8], marker: u8) -> bool {
+    line.len() >= 3 && line[0] == marker && line[1] == marker && line[2] == marker
+}
+
+fn inline_code_ranges(markdown: &str) -> Vec<Range<usize>> {
+    let mut ranges = Vec::new();
+    let bytes = markdown.as_bytes();
     let mut index = 0;
 
-    while index + 1 < output.len() {
-        let bytes = output.as_bytes();
+    while index < bytes.len() {
+        if bytes[index] == b'`' {
+            let run_len = backtick_run_len(bytes, index);
+            let search_start = index + run_len;
 
-        if bytes[index] == b'\\' && bytes[index + 1].is_ascii_punctuation() {
-            let mut candidate = output.clone();
-            candidate.remove(index);
-
-            if normalize_commonmark(&candidate, options) == baseline {
-                output = candidate;
+            if let Some(end) = find_backtick_run(bytes, search_start, run_len) {
+                ranges.push(index..end + run_len);
+                index = end + run_len;
                 continue;
             }
         }
@@ -74,7 +165,88 @@ fn minimize_backslash_escapes(markdown: &str, options: &Options<'_>) -> String {
         index += 1;
     }
 
-    output
+    ranges
+}
+
+fn backtick_run_len(bytes: &[u8], index: usize) -> usize {
+    bytes[index..]
+        .iter()
+        .take_while(|byte| **byte == b'`')
+        .count()
+}
+
+fn find_backtick_run(bytes: &[u8], start: usize, run_len: usize) -> Option<usize> {
+    let mut index = start;
+
+    while index + run_len <= bytes.len() {
+        if bytes[index..index + run_len]
+            .iter()
+            .all(|byte| *byte == b'`')
+        {
+            return Some(index);
+        }
+
+        index += 1;
+    }
+
+    None
+}
+
+fn angle_bracket_ranges(markdown: &str) -> Vec<Range<usize>> {
+    let mut ranges = Vec::new();
+    let bytes = markdown.as_bytes();
+    let mut index = 0;
+
+    while index < bytes.len() {
+        if bytes[index] == b'<'
+            && let Some(end) = bytes[index + 1..]
+                .iter()
+                .position(|byte| *byte == b'>' || *byte == b'\n')
+            && bytes[index + 1 + end] == b'>'
+        {
+            ranges.push(index..index + end + 2);
+            index += end + 2;
+            continue;
+        }
+
+        index += 1;
+    }
+
+    ranges
+}
+
+fn is_structural_escape(markdown: &str, index: usize) -> bool {
+    let bytes = markdown.as_bytes();
+    let escaped = bytes[index + 1];
+
+    if matches!(
+        escaped,
+        b'#' | b'-' | b'+' | b'=' | b'>' | b'*' | b'_' | b'<'
+    ) && is_line_start_escape(bytes, index)
+    {
+        return true;
+    }
+
+    matches!(escaped, b'.' | b')') && is_ordered_list_marker_escape(bytes, index)
+}
+
+fn is_line_start_escape(bytes: &[u8], index: usize) -> bool {
+    let line_start = line_start_index(bytes, index);
+
+    bytes[line_start..index].iter().all(|byte| *byte == b' ')
+}
+
+fn is_ordered_list_marker_escape(bytes: &[u8], index: usize) -> bool {
+    let line_start = line_start_index(bytes, index);
+
+    line_start < index && bytes[line_start..index].iter().all(u8::is_ascii_digit)
+}
+
+fn line_start_index(bytes: &[u8], index: usize) -> usize {
+    bytes[..index]
+        .iter()
+        .rposition(|byte| *byte == b'\n')
+        .map_or(0, |position| position + 1)
 }
 
 fn normalize_commonmark(markdown: &str, options: &Options<'_>) -> String {

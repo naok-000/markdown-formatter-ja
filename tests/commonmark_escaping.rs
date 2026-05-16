@@ -227,6 +227,32 @@ fn minimal_escape_policy_keeps_code_span_content() {
 }
 
 #[test]
+fn minimal_escape_policy_removes_safe_escapes_around_code_spans() {
+    assert_eq!(
+        format_minimal("foo_bar and `\\*code\\*`"),
+        "foo_bar and `\\*code\\*`\n"
+    );
+}
+
+#[test]
+fn minimal_escape_policy_removes_safe_escapes_around_raw_html() {
+    assert_eq!(
+        format_minimal("foo_bar <span data-x=\"\\*\">HTML</span>"),
+        "foo_bar <span data-x=\"\\*\">HTML</span>\n"
+    );
+}
+
+#[test]
+fn minimal_escape_policy_removes_safe_escapes_around_structural_escapes() {
+    let input = "foo_bar\n\n\\# heading\n\n1\\. item";
+
+    assert_eq!(
+        format_minimal(input),
+        "foo_bar\n\n\\# heading\n\n1\\. item\n"
+    );
+}
+
+#[test]
 fn minimal_escape_policy_preserves_conservative_rendering_after_reparse() {
     let cases = [
         ("escaped emphasis markers", "\\*not emphasized\\*"),
