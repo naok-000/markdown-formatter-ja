@@ -261,6 +261,37 @@ fn minimal_escape_policy_removes_safe_escapes_when_unsafe_escapes_are_present() 
 }
 
 #[test]
+fn minimal_escape_policy_keeps_at_escape_that_suppresses_autolinks() {
+    assert_eq!(format_minimal("foo\\@bar.com"), "foo\\@bar.com\n");
+}
+
+#[test]
+fn minimal_escape_policy_keeps_closing_bracket_escape_in_link_labels() {
+    let cases = [
+        ("[foo\\]]: /url\n\n[foo\\]]", "[foo\\]](/url)\n"),
+        ("[foo\\]bar]: /url\n\n[foo\\]bar]", "[foo\\]bar](/url)\n"),
+    ];
+
+    for (input, expected) in cases {
+        assert_eq!(format_minimal(input), expected);
+    }
+}
+
+#[test]
+fn minimal_escape_policy_keeps_container_line_start_marker_escapes() {
+    let cases = [
+        ("> \\# not heading", "> \\# not heading\n"),
+        ("> 1\\. not list", "> 1\\. not list\n"),
+        ("- \\# not heading", "- \\# not heading\n"),
+        ("- 1\\. not list", "- 1\\. not list\n"),
+    ];
+
+    for (input, expected) in cases {
+        assert_eq!(format_minimal(input), expected);
+    }
+}
+
+#[test]
 fn minimal_escape_policy_preserves_conservative_rendering_after_reparse() {
     let cases = [
         ("escaped emphasis markers", "\\*not emphasized\\*"),
