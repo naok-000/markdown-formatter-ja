@@ -7,12 +7,19 @@ use comrak::{Arena, Options, format_commonmark, parse_document};
 pub struct FormatOptions {
     pub width: usize,
     pub line_break_mode: LineBreakMode,
+    pub escape_policy: EscapePolicy,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LineBreakMode {
     Ignore,
     Preserve,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EscapePolicy {
+    Conservative,
+    Minimal,
 }
 
 pub fn format_markdown(markdown: &str, options: FormatOptions) -> String {
@@ -24,7 +31,11 @@ pub fn format_markdown(markdown: &str, options: FormatOptions) -> String {
 
     let mut output = String::new();
     format_commonmark(root, &comrak_options, &mut output).unwrap();
-    output
+
+    match options.escape_policy {
+        EscapePolicy::Conservative => output,
+        EscapePolicy::Minimal => minimize_backslash_escapes(&output, &comrak_options),
+    }
 }
 
 fn comrak_options() -> Options<'static> {
@@ -40,6 +51,38 @@ fn comrak_options() -> Options<'static> {
     options.render.width = 0;
 
     options
+}
+
+fn minimize_backslash_escapes(markdown: &str, options: &Options<'_>) -> String {
+    let baseline = normalize_commonmark(markdown, options);
+    let mut output = markdown.to_owned();
+    let mut index = 0;
+
+    while index + 1 < output.len() {
+        let bytes = output.as_bytes();
+
+        if bytes[index] == b'\\' && bytes[index + 1].is_ascii_punctuation() {
+            let mut candidate = output.clone();
+            candidate.remove(index);
+
+            if normalize_commonmark(&candidate, options) == baseline {
+                output = candidate;
+                continue;
+            }
+        }
+
+        index += 1;
+    }
+
+    output
+}
+
+fn normalize_commonmark(markdown: &str, options: &Options<'_>) -> String {
+    let arena = Arena::new();
+    let root = parse_document(&arena, markdown, options);
+    let mut output = String::new();
+    format_commonmark(root, options, &mut output).unwrap();
+    output
 }
 
 fn wrap_document<'a>(arena: &'a Arena<'a>, root: &'a AstNode<'a>, options: FormatOptions) {

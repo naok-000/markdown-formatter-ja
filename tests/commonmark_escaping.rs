@@ -1,4 +1,4 @@
-use markdown_formatter_ja::{FormatOptions, LineBreakMode, format_markdown};
+use markdown_formatter_ja::{EscapePolicy, FormatOptions, LineBreakMode, format_markdown};
 
 // These cases track CommonMark 0.31.2 elements plus the comrak extensions
 // enabled by this crate, so future escape-policy changes can be explicit.
@@ -10,19 +10,28 @@ struct Case {
 }
 
 fn format(input: &str) -> String {
-    format_with_mode(input, LineBreakMode::Ignore)
+    format_with_policy(input, LineBreakMode::Ignore, EscapePolicy::Conservative)
+}
+
+fn format_minimal(input: &str) -> String {
+    format_with_policy(input, LineBreakMode::Ignore, EscapePolicy::Minimal)
 }
 
 fn format_preserving_line_breaks(input: &str) -> String {
-    format_with_mode(input, LineBreakMode::Preserve)
+    format_with_policy(input, LineBreakMode::Preserve, EscapePolicy::Conservative)
 }
 
-fn format_with_mode(input: &str, line_break_mode: LineBreakMode) -> String {
+fn format_with_policy(
+    input: &str,
+    line_break_mode: LineBreakMode,
+    escape_policy: EscapePolicy,
+) -> String {
     format_markdown(
         input,
         FormatOptions {
             width: 1000,
             line_break_mode,
+            escape_policy,
         },
     )
 }
@@ -189,6 +198,50 @@ fn captures_text_escaping_rendering() {
 
     for case in cases {
         assert_eq!(format(case.input), case.expected, "{}", case.name);
+    }
+}
+
+#[test]
+fn minimal_escape_policy_removes_safe_backslash_escapes() {
+    let input = "foo_bar > quote # hash [bracket] !bang @user";
+
+    assert_eq!(
+        format_minimal(input),
+        "foo_bar > quote # hash [bracket] !bang @user\n"
+    );
+}
+
+#[test]
+fn minimal_escape_policy_keeps_structural_escapes() {
+    let input = "\\# heading\n\n\\- item\n\n1\\. item";
+
+    assert_eq!(
+        format_minimal(input),
+        "\\# heading\n\n\\- item\n\n1\\. item\n"
+    );
+}
+
+#[test]
+fn minimal_escape_policy_keeps_code_span_content() {
+    assert_eq!(format_minimal("`\\*code\\*`"), "`\\*code\\*`\n");
+}
+
+#[test]
+fn minimal_escape_policy_preserves_conservative_rendering_after_reparse() {
+    let cases = [
+        ("escaped emphasis markers", "\\*not emphasized\\*"),
+        ("escaped link marker", "\\[not link](https://example.com/)"),
+        (
+            "escaped image marker",
+            "\\![not image](https://example.com/i.png)",
+        ),
+        ("table pipe", "| a |\n| --- |\n| \\| |"),
+        ("code span", "`\\*code\\*`"),
+        ("raw html", "<span data-x=\"\\*\">HTML</span>"),
+    ];
+
+    for (name, input) in cases {
+        assert_eq!(format(&format_minimal(input)), format(input), "{}", name);
     }
 }
 

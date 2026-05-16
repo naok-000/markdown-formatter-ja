@@ -30,6 +30,12 @@ Preserve existing line breaks:
 nix run github:naok-000/markdown-formatter-ja -- --width 80 --preserve-line-breaks < input.md
 ```
 
+Use fewer CommonMark-safe backslash escapes:
+
+```sh
+nix run github:naok-000/markdown-formatter-ja -- --escape-policy minimal < input.md
+```
+
 ## Install with Cargo
 
 ```sh

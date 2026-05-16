@@ -1,9 +1,10 @@
-use markdown_formatter_ja::{FormatOptions, LineBreakMode, format_markdown};
+use markdown_formatter_ja::{EscapePolicy, FormatOptions, LineBreakMode, format_markdown};
 
 fn ignore(width: usize) -> FormatOptions {
     FormatOptions {
         width,
         line_break_mode: LineBreakMode::Ignore,
+        escape_policy: EscapePolicy::Conservative,
     }
 }
 
@@ -11,6 +12,7 @@ fn preserve(width: usize) -> FormatOptions {
     FormatOptions {
         width,
         line_break_mode: LineBreakMode::Preserve,
+        escape_policy: EscapePolicy::Conservative,
     }
 }
 
