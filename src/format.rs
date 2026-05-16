@@ -149,13 +149,36 @@ fn looks_like_email_autolink(bytes: &[u8], index: usize) -> bool {
 }
 
 fn backslash_literal_ranges(markdown: &str) -> Vec<Range<usize>> {
-    let mut ranges = fenced_code_ranges(markdown);
+    let mut ranges = front_matter_ranges(markdown);
 
+    ranges.extend(fenced_code_ranges(markdown));
+    ranges.extend(html_block_ranges(markdown));
     ranges.extend(inline_code_ranges(markdown));
     ranges.extend(angle_bracket_ranges(markdown));
     ranges.sort_by_key(|range| range.start);
 
     ranges
+}
+
+fn front_matter_ranges(markdown: &str) -> Vec<Range<usize>> {
+    let mut line_start = 0;
+
+    for (line_number, line) in markdown.split_inclusive('\n').enumerate() {
+        let line_end = line_start + line.len();
+        let content = line.trim_end_matches('\n').trim_end_matches('\r');
+
+        if line_number == 0 && content != "---" {
+            return Vec::new();
+        }
+
+        if line_number > 0 && content == "---" {
+            return std::iter::once(0..line_end).collect();
+        }
+
+        line_start = line_end;
+    }
+
+    Vec::new()
 }
 
 fn fenced_code_ranges(markdown: &str) -> Vec<Range<usize>> {
@@ -191,6 +214,143 @@ fn fenced_code_ranges(markdown: &str) -> Vec<Range<usize>> {
 
 fn starts_with_fence(line: &[u8], marker: u8) -> bool {
     line.len() >= 3 && line[0] == marker && line[1] == marker && line[2] == marker
+}
+
+fn html_block_ranges(markdown: &str) -> Vec<Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut block_start = None;
+    let mut line_start = 0;
+
+    for line in markdown.split_inclusive('\n') {
+        let line_end = line_start + line.len();
+        let content = line.trim_end_matches('\n').trim_end_matches('\r');
+
+        if let Some(start) = block_start {
+            if content.is_empty() {
+                ranges.push(start..line_start);
+                block_start = None;
+            }
+        } else if starts_html_block(content.as_bytes()) {
+            block_start = Some(line_start);
+        }
+
+        line_start = line_end;
+    }
+
+    if let Some(start) = block_start {
+        ranges.push(start..markdown.len());
+    }
+
+    ranges
+}
+
+fn starts_html_block(line: &[u8]) -> bool {
+    let start = skip_spaces(line, 0, line.len(), 3);
+
+    if !is_before(line, start, b'<') {
+        return false;
+    }
+
+    line[start..].starts_with(b"<!--")
+        || line[start..].starts_with(b"<?")
+        || line[start..].starts_with(b"<!")
+        || html_block_tag_name(line, start + 1).is_some_and(is_html_block_tag)
+}
+
+fn html_block_tag_name(line: &[u8], mut index: usize) -> Option<&[u8]> {
+    if is_before(line, index, b'/') {
+        index += 1;
+    }
+
+    let start = index;
+
+    while index < line.len() && line[index].is_ascii_alphanumeric() {
+        index += 1;
+    }
+
+    if start == index
+        || (index < line.len()
+            && !matches!(line[index], b' ' | b'\t' | b'\n' | b'\r' | b'/' | b'>'))
+    {
+        None
+    } else {
+        Some(&line[start..index])
+    }
+}
+
+fn is_html_block_tag(name: &[u8]) -> bool {
+    const TAGS: &[&[u8]] = &[
+        b"address",
+        b"article",
+        b"aside",
+        b"base",
+        b"basefont",
+        b"blockquote",
+        b"body",
+        b"caption",
+        b"center",
+        b"col",
+        b"colgroup",
+        b"dd",
+        b"details",
+        b"dialog",
+        b"dir",
+        b"div",
+        b"dl",
+        b"dt",
+        b"fieldset",
+        b"figcaption",
+        b"figure",
+        b"footer",
+        b"form",
+        b"frame",
+        b"frameset",
+        b"h1",
+        b"h2",
+        b"h3",
+        b"h4",
+        b"h5",
+        b"h6",
+        b"head",
+        b"header",
+        b"hr",
+        b"html",
+        b"iframe",
+        b"legend",
+        b"li",
+        b"link",
+        b"main",
+        b"menu",
+        b"menuitem",
+        b"nav",
+        b"noframes",
+        b"ol",
+        b"optgroup",
+        b"option",
+        b"p",
+        b"param",
+        b"search",
+        b"section",
+        b"summary",
+        b"table",
+        b"tbody",
+        b"td",
+        b"tfoot",
+        b"th",
+        b"thead",
+        b"title",
+        b"tr",
+        b"track",
+        b"ul",
+        b"script",
+        b"pre",
+        b"style",
+        b"textarea",
+        b"video",
+        b"source",
+    ];
+
+    TAGS.iter().any(|tag| name.eq_ignore_ascii_case(tag))
 }
 
 fn inline_code_ranges(markdown: &str) -> Vec<Range<usize>> {

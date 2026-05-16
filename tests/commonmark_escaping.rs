@@ -243,6 +243,26 @@ fn minimal_escape_policy_removes_safe_escapes_around_raw_html() {
 }
 
 #[test]
+fn minimal_escape_policy_preserves_front_matter_content() {
+    let input = "---\nslug: foo\\_bar\n---\n\nfoo_bar";
+
+    assert_eq!(
+        format_minimal(input),
+        "---\nslug: foo\\_bar\n---\n\nfoo_bar\n"
+    );
+}
+
+#[test]
+fn minimal_escape_policy_preserves_html_block_content() {
+    let input = "<div>\nfoo\\_bar\n</div>\n\nfoo_bar";
+
+    assert_eq!(
+        format_minimal(input),
+        "<div>\nfoo\\_bar\n</div>\n\nfoo_bar\n"
+    );
+}
+
+#[test]
 fn minimal_escape_policy_removes_safe_escapes_around_structural_escapes() {
     let input = "foo_bar\n\n\\# heading\n\n1\\. item";
 
