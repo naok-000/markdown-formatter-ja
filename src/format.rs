@@ -35,7 +35,7 @@ pub fn format_markdown(markdown: &str, options: FormatOptions) -> String {
 
     match options.escape_policy {
         EscapePolicy::Conservative => output,
-        EscapePolicy::Minimal => minimize_backslash_escapes(&output, &comrak_options),
+        EscapePolicy::Minimal => minimize_backslash_escapes(&output),
     }
 }
 
@@ -54,18 +54,8 @@ fn comrak_options() -> Options<'static> {
     options
 }
 
-fn minimize_backslash_escapes(markdown: &str, options: &Options<'_>) -> String {
-    let candidate = remove_candidate_backslash_escapes(markdown);
-
-    if candidate == markdown {
-        return candidate;
-    }
-
-    if normalize_commonmark(&candidate, options) == markdown {
-        candidate
-    } else {
-        markdown.to_owned()
-    }
+fn minimize_backslash_escapes(markdown: &str) -> String {
+    remove_candidate_backslash_escapes(markdown)
 }
 
 fn remove_candidate_backslash_escapes(markdown: &str) -> String {
@@ -89,7 +79,7 @@ fn remove_candidate_backslash_escapes(markdown: &str) -> String {
         if bytes[index] == b'\\'
             && bytes[index + 1].is_ascii_punctuation()
             && !is_literal
-            && !is_structural_escape(markdown, index)
+            && is_removable_escape(markdown, index)
         {
             output.push_str(&markdown[start..index]);
             start = index + 1;
@@ -98,6 +88,41 @@ fn remove_candidate_backslash_escapes(markdown: &str) -> String {
 
     output.push_str(&markdown[start..]);
     output
+}
+
+fn is_removable_escape(markdown: &str, index: usize) -> bool {
+    let bytes = markdown.as_bytes();
+
+    match bytes[index + 1] {
+        b'_' => is_intraword_escape(bytes, index),
+        b'>' | b'#' => !is_line_start_escape(bytes, index),
+        b'.' | b')' => !is_ordered_list_marker_escape(bytes, index),
+        b'!' => !is_before(bytes, index + 2, b'['),
+        b'[' => !starts_link_or_reference(bytes, index + 2),
+        b']' => true,
+        b'@' => true,
+        _ => false,
+    }
+}
+
+fn is_intraword_escape(bytes: &[u8], index: usize) -> bool {
+    index > 0
+        && index + 2 < bytes.len()
+        && bytes[index - 1].is_ascii_alphanumeric()
+        && bytes[index + 2].is_ascii_alphanumeric()
+}
+
+fn is_before(bytes: &[u8], index: usize, expected: u8) -> bool {
+    bytes.get(index).is_some_and(|byte| *byte == expected)
+}
+
+fn starts_link_or_reference(bytes: &[u8], index: usize) -> bool {
+    let Some(label_end) = bytes[index..].iter().position(|byte| *byte == b']') else {
+        return false;
+    };
+    let next = index + label_end + 1;
+
+    is_before(bytes, next, b'(') || is_before(bytes, next, b'[')
 }
 
 fn backslash_literal_ranges(markdown: &str) -> Vec<Range<usize>> {
@@ -215,21 +240,6 @@ fn angle_bracket_ranges(markdown: &str) -> Vec<Range<usize>> {
     ranges
 }
 
-fn is_structural_escape(markdown: &str, index: usize) -> bool {
-    let bytes = markdown.as_bytes();
-    let escaped = bytes[index + 1];
-
-    if matches!(
-        escaped,
-        b'#' | b'-' | b'+' | b'=' | b'>' | b'*' | b'_' | b'<'
-    ) && is_line_start_escape(bytes, index)
-    {
-        return true;
-    }
-
-    matches!(escaped, b'.' | b')') && is_ordered_list_marker_escape(bytes, index)
-}
-
 fn is_line_start_escape(bytes: &[u8], index: usize) -> bool {
     let line_start = line_start_index(bytes, index);
 
@@ -247,14 +257,6 @@ fn line_start_index(bytes: &[u8], index: usize) -> usize {
         .iter()
         .rposition(|byte| *byte == b'\n')
         .map_or(0, |position| position + 1)
-}
-
-fn normalize_commonmark(markdown: &str, options: &Options<'_>) -> String {
-    let arena = Arena::new();
-    let root = parse_document(&arena, markdown, options);
-    let mut output = String::new();
-    format_commonmark(root, options, &mut output).unwrap();
-    output
 }
 
 fn wrap_document<'a>(arena: &'a Arena<'a>, root: &'a AstNode<'a>, options: FormatOptions) {

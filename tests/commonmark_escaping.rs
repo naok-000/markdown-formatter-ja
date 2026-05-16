@@ -253,6 +253,14 @@ fn minimal_escape_policy_removes_safe_escapes_around_structural_escapes() {
 }
 
 #[test]
+fn minimal_escape_policy_removes_safe_escapes_when_unsafe_escapes_are_present() {
+    assert_eq!(
+        format_minimal("foo_bar \\*not emphasized\\*"),
+        "foo_bar \\*not emphasized\\*\n"
+    );
+}
+
+#[test]
 fn minimal_escape_policy_preserves_conservative_rendering_after_reparse() {
     let cases = [
         ("escaped emphasis markers", "\\*not emphasized\\*"),
