@@ -26,8 +26,6 @@ jobs:
 
       - run: nix flake check
       - run: nix build
-      - run: nix develop -c cargo fmt --check
-      - run: nix develop -c cargo clippy -- -D warnings
-      - run: nix develop -c cargo test
+      - run: nix develop -c scripts/quality-gate.sh
       - run: nix develop -c cargo build --release
       - run: nix develop -c cargo install --path . --locked

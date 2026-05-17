@@ -1,3 +1,3 @@
 mod format;
 
-pub use format::{FormatOptions, LineBreakMode, format_markdown};
+pub use format::{EscapePolicy, FormatOptions, LineBreakMode, format_markdown};

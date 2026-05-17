@@ -2,8 +2,8 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::process::ExitCode;
 
-use clap::Parser;
-use markdown_formatter_ja::{FormatOptions, LineBreakMode, format_markdown};
+use clap::{Parser, ValueEnum};
+use markdown_formatter_ja::{EscapePolicy, FormatOptions, LineBreakMode, format_markdown};
 
 const DEFAULT_WIDTH: usize = 80;
 
@@ -14,9 +14,26 @@ struct Config {
     width: usize,
     #[arg(long)]
     preserve_line_breaks: bool,
+    #[arg(long, value_enum, default_value = "conservative")]
+    escape_policy: CliEscapePolicy,
     #[arg(long, requires = "path")]
     write: bool,
     path: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum CliEscapePolicy {
+    Conservative,
+    Minimal,
+}
+
+impl From<CliEscapePolicy> for EscapePolicy {
+    fn from(policy: CliEscapePolicy) -> Self {
+        match policy {
+            CliEscapePolicy::Conservative => EscapePolicy::Conservative,
+            CliEscapePolicy::Minimal => EscapePolicy::Minimal,
+        }
+    }
 }
 
 fn main() -> ExitCode {
@@ -42,6 +59,7 @@ fn run() -> Result<(), String> {
         FormatOptions {
             width: config.width,
             line_break_mode,
+            escape_policy: config.escape_policy.into(),
         },
     );
 

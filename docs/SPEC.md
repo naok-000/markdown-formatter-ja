@@ -21,6 +21,7 @@
 - 通常段落とリスト項目では，既存の改行位置を無視して指定幅で改行する
 - option指定により，既存の改行位置を維持して指定幅で改行できる
 - file先頭のmetadataは改行を加えず維持する
+- CommonMarkとして意味が変わらない範囲で，出力時のbackslash escape方針を選択できる
 - 半角文字は幅1，全角文字は幅2として扱う
 - Markdown記法の行頭マーカーも行幅に含める
 - 句読点の前や閉カッコの前では改行しない
@@ -43,3 +44,4 @@
 - [0004. CLIのファイル指定時も整形結果を標準出力する](./adr/0004-print-formatted-output-for-file-input.md)
 - [0005. CI/CDと配布方法をNixとCargo install --gitに絞る](./adr/0005-ci-release-and-distribution.md)
 - [0006. SPEC.md, TODO.md, ADRの役割を分ける](./adr/0006-document-roles-for-spec-todo-and-adr.md)
+- [0007. CommonMark互換の範囲でescape policyを選択可能にする](./adr/0007-make-commonmark-escape-policy-selectable.md)
