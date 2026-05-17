@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "scripts/codex-review.sh --uncommitted",
+            "timeout": 600,
+            "statusMessage": "Reviewing uncommitted changes"
+          }
+        ]
+      }
+    ]
+  }
+}
